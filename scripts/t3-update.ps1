@@ -1,8 +1,9 @@
 # Keeps the installed gentle-ai on upstream main plus this fork's headless API.
 #
-# Rebases the t3/headless-api branch onto upstream/main, runs the API tests,
-# and installs the build over the gentle-ai on PATH. Any failure (dirty tree,
-# rebase conflict, failing tests, a build that cannot answer `api describe`)
+# Merges upstream/main into main, runs the API tests, and installs the build
+# over the gentle-ai on PATH. Merging (not rebasing) keeps main pushable without
+# a force push. Any failure (dirty tree, merge conflict, failing tests, a build
+# that cannot answer `api describe`)
 # stops before the install, so the working binary is never replaced by a
 # broken one. Runs daily from the "gentle-ai T3 update" scheduled task.
 #
@@ -11,7 +12,7 @@
 # off (GENTLE_AI_NO_SELF_UPDATE=1): it would replace this build with a stock one.
 
 $ErrorActionPreference = 'Stop'
-$Branch = 't3/headless-api'
+$Branch = 'main'
 $Repo = Split-Path -Parent $PSScriptRoot
 $Target = (Get-Command gentle-ai -CommandType Application -ErrorAction SilentlyContinue |
   Select-Object -First 1).Source
@@ -39,10 +40,10 @@ try {
   $upstream = Invoke-Git rev-parse upstream/main
   & git -C $Repo merge-base --is-ancestor $upstream HEAD
   if ($LASTEXITCODE -ne 0) {
-    & git -C $Repo rebase --quiet upstream/main 2>&1 | Out-Null
+    & git -C $Repo merge --quiet --no-edit -m 'chore(fork): sync upstream' upstream/main 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) {
-      & git -C $Repo rebase --abort 2>&1 | Out-Null
-      throw "rebase onto upstream/main ($($upstream.Substring(0, 9))) conflicts; resolve it by hand"
+      & git -C $Repo merge --abort 2>&1 | Out-Null
+      throw "merging upstream/main ($($upstream.Substring(0, 9))) conflicts; resolve it by hand"
     }
   }
 
