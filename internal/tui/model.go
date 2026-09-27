@@ -32,6 +32,7 @@ import (
 	"github.com/gentleman-programming/gentle-ai/v3/internal/pipeline"
 	"github.com/gentleman-programming/gentle-ai/v3/internal/planner"
 	"github.com/gentleman-programming/gentle-ai/v3/internal/reviewtransaction"
+	"github.com/gentleman-programming/gentle-ai/v3/internal/service"
 	"github.com/gentleman-programming/gentle-ai/v3/internal/state"
 	"github.com/gentleman-programming/gentle-ai/v3/internal/statecoord"
 	"github.com/gentleman-programming/gentle-ai/v3/internal/system"
@@ -896,6 +897,9 @@ func NewModel(detection system.DetectionResult, version string, installState ...
 		KiroModelAssignments:   installStateKiroAssignments(s.KiroModelAssignments),
 		ModelAssignments:       installStateModelAssignments(s.ModelAssignments),
 	}
+	// Every agent's persisted model choices seed the selection, so an install
+	// republishes them instead of clearing the ones this session never edits.
+	service.RestoreModelAssignments(&selection, s)
 
 	return Model{
 		Screen:                ScreenWelcome,
