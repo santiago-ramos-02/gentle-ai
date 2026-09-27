@@ -179,6 +179,7 @@ var documentedInvocationExecutionExclusions = map[string]string{
 	"install":   "its case only prints help; a real install falls through to system detection and the TUI",
 	"uninstall": "may prompt interactively and mutates installed agent state",
 	"codegraph": "proxies to the external codegraph binary, which CI does not install",
+	"api":       "its methods act on the real home directory; internal/api covers them against temp homes",
 }
 
 type invocationTier string

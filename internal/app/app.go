@@ -117,6 +117,8 @@ func RunArgs(args []string, stdout io.Writer) error {
 				return err
 			}
 			return runUninstall(args[1:], stdout)
+		case "api":
+			return runAPI(args[1:], stdout)
 		case "skill-registry":
 			return runSkillRegistry(args[1:], stdout)
 		case "codegraph":

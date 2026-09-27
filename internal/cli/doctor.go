@@ -93,7 +93,13 @@ func RunDoctor(ctx context.Context, w io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("resolve home directory: %w", err)
 	}
+	renderDoctorReport(w, DoctorChecks(ctx, homeDir))
+	return nil
+}
 
+// DoctorChecks runs every ecosystem health check for homeDir and returns the
+// structured results in execution order.
+func DoctorChecks(ctx context.Context, homeDir string) DoctorReport {
 	installedAgents, _ := readDoctorInstalledAgents(homeDir)
 	// A state read failure (missing/malformed file) is surfaced separately by
 	// checkStateJSON. Here we fall back to an empty list so the doctor only
@@ -115,10 +121,7 @@ func RunDoctor(ctx context.Context, w io.Writer) error {
 		doctor.Check{ID: doctor.CheckEngramReachable, Run: func(ctx context.Context) doctor.Result { return checkEngramReachable(ctx, homeDir, installedAgents) }},
 		doctor.Check{ID: doctor.CheckDiskSpace, Run: func(context.Context) doctor.Result { return checkDiskSpace(homeDir) }},
 	)
-	report := (doctor.Runner{Checks: checks}).Run(ctx)
-
-	renderDoctorReport(w, report)
-	return nil
+	return (doctor.Runner{Checks: checks}).Run(ctx)
 }
 
 // readDoctorInstalledAgents returns the agent IDs persisted in state.json.
