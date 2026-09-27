@@ -413,10 +413,24 @@ func (s *Service) buildPlan(agentIDs []model.AgentID, componentIDs []model.Compo
 			return plan{}, fmt.Errorf("unsupported agent %q", agentID)
 		}
 
-		for _, componentID := range componentIDs {
-			ops, targets, err := s.componentOperations(adapter, componentID)
-			if err != nil {
-				return plan{}, fmt.Errorf("plan uninstall for %q/%q: %w", agentID, componentID, err)
+		// Removing every component removes Gentle AI from the agent, so one more
+		// step takes out what the agent itself received (see fullAgentOperations).
+		steps := len(componentIDs)
+		if removesAllAgentComponents(componentIDs) {
+			steps++
+		}
+		for step := range steps {
+			var ops []operation
+			var targets []string
+			if step < len(componentIDs) {
+				componentID := componentIDs[step]
+				var err error
+				ops, targets, err = s.componentOperations(adapter, componentID)
+				if err != nil {
+					return plan{}, fmt.Errorf("plan uninstall for %q/%q: %w", agentID, componentID, err)
+				}
+			} else {
+				ops, targets = fullAgentOperations(adapter, s.homeDir)
 			}
 			for _, target := range targets {
 				files, err := expandBackupTarget(target)
