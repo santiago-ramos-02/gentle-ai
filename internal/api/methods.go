@@ -42,6 +42,7 @@ func methods() []method {
 		{name: "uninstall.run", run: typed(runUninstall)},
 		{name: "doctor", run: typed(runDoctor)},
 		{name: "footprint", run: typed(footprint)},
+		{name: "odd.features", run: typed(oddFeatures)},
 	}
 }
 
