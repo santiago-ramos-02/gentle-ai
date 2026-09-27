@@ -32,6 +32,7 @@ func (e *emitter) write(line any) {
 type progressLine struct {
 	Type   string `json:"type"`
 	Step   string `json:"step"`
+	Label  string `json:"label"`
 	Stage  string `json:"stage,omitempty"`
 	Status string `json:"status"`
 	Error  string `json:"error,omitempty"`
@@ -44,7 +45,7 @@ type logLine struct {
 
 // progress reports one pipeline step transition.
 func (e *emitter) progress(event pipeline.ProgressEvent) {
-	line := progressLine{Type: "progress", Step: event.StepID, Stage: string(event.Stage), Status: string(event.Status)}
+	line := progressLine{Type: "progress", Step: event.StepID, Label: stepLabel(event.StepID), Stage: string(event.Stage), Status: string(event.Status)}
 	if event.Err != nil {
 		line.Error = event.Err.Error()
 	}

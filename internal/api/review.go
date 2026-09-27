@@ -25,11 +25,16 @@ type cwdParams struct {
 	Cwd string `json:"cwd"`
 }
 
+// reviewStatus reads the review switch. Without a cwd it reads the global
+// setting from the home directory, where no clone override applies.
 func reviewStatus(ctx context.Context, env *env, params cwdParams) (any, error) {
-	if err := requireCwd(params.Cwd); err != nil {
+	cwd := params.Cwd
+	if cwd == "" {
+		cwd = env.deps.HomeDir
+	} else if err := requireCwd(cwd); err != nil {
 		return nil, err
 	}
-	result, err := env.deps.ReviewMode(ctx, params.Cwd, "status", "global")
+	result, err := env.deps.ReviewMode(ctx, cwd, "status", "global")
 	if err != nil {
 		return nil, errorf(CodeFailed, "%v", err)
 	}
@@ -45,7 +50,11 @@ type reviewSetParams struct {
 // reviewSet flips the receipt-driven-development switch. The default global
 // scope is what the TUI's review mode screen changes.
 func reviewSet(ctx context.Context, env *env, params reviewSetParams) (any, error) {
-	if err := requireCwd(params.Cwd); err != nil {
+	// Only a clone override needs a project; the global switch is set from home.
+	cwd := params.Cwd
+	if cwd == "" && params.Scope != "clone" {
+		cwd = env.deps.HomeDir
+	} else if err := requireCwd(cwd); err != nil {
 		return nil, err
 	}
 	if params.Enabled == nil {
@@ -63,7 +72,7 @@ func reviewSet(ctx context.Context, env *env, params reviewSetParams) (any, erro
 	if *params.Enabled {
 		operation = "enable"
 	}
-	result, err := env.deps.ReviewMode(ctx, params.Cwd, operation, scope)
+	result, err := env.deps.ReviewMode(ctx, cwd, operation, scope)
 	if err != nil {
 		return nil, errorf(CodeFailed, "%v", err)
 	}

@@ -121,7 +121,11 @@ func TestUninstallExpandsModesAndRunsTheirFollowUps(t *testing.T) {
 	failure(t, deps, []string{"uninstall.plan"}, `{"mode":"full","agents":["claude-code"],"cwd":`+cwdJSON+`}`, CodeInvalidParams)
 	failure(t, deps, []string{"uninstall.plan"}, `{"mode":"full","profiles":["cheap"],"cwd":`+cwdJSON+`}`, CodeInvalidParams)
 	failure(t, deps, []string{"uninstall.plan"}, `{"mode":"everything","cwd":`+cwdJSON+`}`, CodeInvalidParams)
-	failure(t, deps, []string{"uninstall.plan"}, `{"mode":"full"}`, CodeInvalidParams)
+	// Without a project, project cleanup is unavailable rather than an error.
+	if plan := result[uninstallPlan](t, deps, "uninstall.plan", `{"mode":"full"}`); plan.EngramScopeAvailable {
+		t.Fatalf("no project should offer no project cleanup: %+v", plan)
+	}
+	failure(t, deps, []string{"uninstall.plan"}, `{"mode":"full","engramScope":"project"}`, CodeInvalidParams)
 
 	var scope model.EngramUninstallScope
 	deps.Uninstall = func(_ string, gotCwd string, agents []model.AgentID, components []model.ComponentID, engramScope model.EngramUninstallScope) (componentuninstall.Result, error) {

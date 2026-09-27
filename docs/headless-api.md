@@ -27,7 +27,7 @@ gentle-ai api describe
 Zero or more event lines come first:
 
 ```json
-{"type":"progress","step":"agent:claude-code","stage":"apply","status":"running"}
+{"type":"progress","step":"agent:claude-code","label":"Set up Claude Code","stage":"apply","status":"running"}
 {"type":"log","message":"  ✓ Upgrading engram"}
 ```
 
@@ -75,11 +75,11 @@ Field names are camelCase. Lists and objects are never `null`; an optional value
 | `builder.engines` | none | Agent builder `engines` and whether each is available |
 | `builder.generate` | `engine`, `prompt` | The generated `agent`, install `targets`, and name `conflicts` |
 | `builder.install` | `agent`, `engine` | Installed `files`, `renamedTo`, `warnings` |
-| `review.status` | `cwd` | The `gentle-ai.review-mode/v1` report |
-| `review.set` | `cwd`, `enabled`, `scope` | The `gentle-ai.review-mode/v1` report |
+| `review.status` | `cwd` (optional; without it, the global setting read from home) | The `gentle-ai.review-mode/v1` report |
+| `review.set` | `enabled`, `scope`, `cwd` (needed only for `scope: clone`) | The `gentle-ai.review-mode/v1` report |
 | `reviewStore.survey` | `cwd` | The `gentle-ai.review-store-reset-result/v1` report |
 | `reviewStore.reset` | `cwd`, `includeInFlight`, `includeAdapterReviews` | The `gentle-ai.review-store-reset-result/v1` report |
-| `uninstall.plan` | `mode`, `agents`, `components`, `engramScope`, `cwd` | What the mode removes and whether project Engram cleanup is available |
+| `uninstall.plan` | `mode`, `agents`, `components`, `engramScope`, `cwd` (optional; only scopes project cleanup) | What the mode removes and whether project Engram cleanup is available |
 | `uninstall.run` | same as `uninstall.plan` | The uninstall report plus `binaryRemoved` or `synced` |
 | `doctor` | none | `ok` and structured `checks` |
 | `footprint` | `agent` | What removing Gentle AI from that agent would undo, without changing anything: `removed` paths, `rewritten` files with their content afterwards, and `unsimulated` paths outside the home it could not simulate. A host uses it to run the agent without Gentle AI. |

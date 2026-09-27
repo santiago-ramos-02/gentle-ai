@@ -134,8 +134,9 @@ func TestPluginsRequireOpenCodeAndReportInstalled(t *testing.T) {
 func TestReviewMethodsValidateCwdAndMapRefusals(t *testing.T) {
 	deps := testDeps(t)
 	cwd := t.TempDir()
-	failure(t, deps, []string{"review.status"}, `{}`, CodeInvalidParams)
 	failure(t, deps, []string{"review.status"}, `{"cwd":"relative/dir"}`, CodeInvalidParams)
+	// A clone override needs the clone; the global switch does not.
+	failure(t, deps, []string{"review.set"}, `{"enabled":true,"scope":"clone"}`, CodeInvalidParams)
 	failure(t, deps, []string{"review.set"}, `{"cwd":`+quote(cwd)+`}`, CodeInvalidParams)
 	failure(t, deps, []string{"review.set"}, `{"cwd":`+quote(cwd)+`,"enabled":true,"scope":"repo"}`, CodeInvalidParams)
 
@@ -147,7 +148,10 @@ func TestReviewMethodsValidateCwdAndMapRefusals(t *testing.T) {
 	status := result[cli.ReviewModeResult](t, deps, "review.status", `{"cwd":`+quote(cwd)+`}`)
 	set := result[cli.ReviewModeResult](t, deps, "review.set", `{"cwd":`+quote(cwd)+`,"enabled":false}`)
 	result[cli.ReviewModeResult](t, deps, "review.set", `{"cwd":`+quote(cwd)+`,"enabled":true,"scope":"clone"}`)
-	if status.Schema != cli.ReviewModeSchema || set.Operation != "disable" || !slices.Equal(calls, []string{cwd + "|status|global", cwd + "|disable|global", cwd + "|enable|clone"}) {
+	result[cli.ReviewModeResult](t, deps, "review.status", `{}`)
+	result[cli.ReviewModeResult](t, deps, "review.set", `{"enabled":true}`)
+	home := deps.HomeDir
+	if status.Schema != cli.ReviewModeSchema || set.Operation != "disable" || !slices.Equal(calls, []string{cwd + "|status|global", cwd + "|disable|global", cwd + "|enable|clone", home + "|status|global", home + "|enable|global"}) {
 		t.Fatalf("review calls = %v, status %+v, set %+v", calls, status, set)
 	}
 

@@ -33,9 +33,14 @@ type uninstallPlan struct {
 
 // planUninstall validates params and expands the mode the way the TUI's
 // uninstall screens do.
+//
+// cwd is optional: it only scopes project cleanup, such as Engram data kept in
+// the project, which is then unavailable.
 func planUninstall(params uninstallParams) (uninstallPlan, error) {
-	if err := requireCwd(params.Cwd); err != nil {
-		return uninstallPlan{}, err
+	if params.Cwd != "" {
+		if err := requireCwd(params.Cwd); err != nil {
+			return uninstallPlan{}, err
+		}
 	}
 	mode := model.UninstallMode(params.Mode)
 	switch mode {
@@ -67,7 +72,7 @@ func planUninstall(params uninstallParams) (uninstallPlan, error) {
 		Mode:                 string(mode),
 		Agents:               strs(agents),
 		Components:           strs(components),
-		EngramScopeAvailable: service.ProjectEngramDataAvailable(components, params.Cwd, os.Stat),
+		EngramScopeAvailable: params.Cwd != "" && service.ProjectEngramDataAvailable(components, params.Cwd, os.Stat),
 		agentIDs:             agents,
 		componentIDs:         components,
 		scope:                model.EngramUninstallScopeGlobal,
@@ -118,7 +123,18 @@ func runUninstall(_ context.Context, env *env, params uninstallParams) (any, err
 	if err != nil {
 		return nil, err
 	}
-	result, err := env.deps.Uninstall(env.deps.HomeDir, params.Cwd, plan.agentIDs, plan.componentIDs, plan.scope)
+	workspace := params.Cwd
+	if workspace == "" {
+		// No project: an empty directory leaves project cleanup nothing to find,
+		// where an empty path would resolve against this process's directory.
+		empty, err := os.MkdirTemp("", "gentle-ai-no-project-*")
+		if err != nil {
+			return nil, errorf(CodeFailed, "uninstall: %v", err)
+		}
+		defer os.RemoveAll(empty)
+		workspace = empty
+	}
+	result, err := env.deps.Uninstall(env.deps.HomeDir, workspace, plan.agentIDs, plan.componentIDs, plan.scope)
 	if err != nil {
 		return nil, errorf(CodeFailed, "uninstall: %v", err)
 	}
