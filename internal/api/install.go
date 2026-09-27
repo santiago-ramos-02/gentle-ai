@@ -95,7 +95,9 @@ func install(ctx context.Context, env *env, params installParams) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	request := service.InstallRequest{Selection: selection, Resolved: resolved, Detection: detection}
+	// Absent communityTools keeps the persisted list: they are managed with
+	// tools.install, and an empty list here would forget the installed ones.
+	request := service.InstallRequest{Selection: selection, Resolved: resolved, Detection: detection, KeepCommunityTools: params.CommunityTools == nil}
 	if err := resolveBackground(&request, current, params.Background); err != nil {
 		return nil, err
 	}

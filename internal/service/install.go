@@ -25,6 +25,9 @@ type InstallRequest struct {
 	OpenCodeBackgroundPersist model.OpenCodeBackgroundIntent
 	PiBackground              model.PiBackgroundIntent
 	PiBackgroundPersist       model.PiBackgroundIntent
+	// KeepCommunityTools leaves the persisted community tools as they are,
+	// for a run that did not ask about them.
+	KeepCommunityTools bool
 }
 
 // writeInstallState publishes the installed selection; tests replace it to
@@ -65,8 +68,10 @@ func Install(homeDir string, request InstallRequest, onProgress pipeline.Progres
 				return fmt.Errorf("read persisted install state: %w", readErr)
 			}
 			installState.InstalledAgents = agentIDs
-			installState.CommunityTools = communityToolIDsToStrings(selection.CommunityTools)
-			installState.CommunityToolsConfigured = true
+			if !request.KeepCommunityTools {
+				installState.CommunityTools = communityToolIDsToStrings(selection.CommunityTools)
+				installState.CommunityToolsConfigured = true
+			}
 			installState.ClaudeModelAssignments = claudeLegacyAssignmentsForState(selection.ClaudeModelAssignments, claudePhaseState)
 			installState.ClaudePhaseAssignments = claudePhaseState
 			installState.KiroModelAssignments = kiroAliasesToStrings(selection.KiroModelAssignments)

@@ -87,7 +87,7 @@ func TestInstallAnswersEveryInstallerQuestion(t *testing.T) {
 	if !slices.Equal(sel.CommunityTools, []model.CommunityToolID{model.CommunityToolCodeGraph}) || !slices.Equal(sel.OpenCodePlugins, []model.OpenCodeCommunityPluginID{model.OpenCodePluginSubAgentStatusline}) {
 		t.Fatalf("optional setup = %+v %+v", sel.CommunityTools, sel.OpenCodePlugins)
 	}
-	if request.OpenCodeBackground != model.OpenCodeBackgroundOn || request.OpenCodeBackgroundPersist != model.OpenCodeBackgroundOn || !slices.Contains(request.Resolved.Agents, model.AgentCodex) {
+	if request.OpenCodeBackground != model.OpenCodeBackgroundOn || request.OpenCodeBackgroundPersist != model.OpenCodeBackgroundOn || !slices.Contains(request.Resolved.Agents, model.AgentCodex) || request.KeepCommunityTools {
 		t.Fatalf("request = %+v", request)
 	}
 }
@@ -205,4 +205,15 @@ func TestUpgradeFailsWhenTheUpdateCheckFails(t *testing.T) {
 		return []update.UpdateResult{{Tool: update.ToolInfo{Name: "engram"}, Status: update.CheckFailed, Err: errors.New("offline")}}
 	}
 	failure(t, deps, []string{"upgrade"}, "", CodeFailed)
+}
+
+func TestInstallWithoutCommunityToolsKeepsThePersistedOnes(t *testing.T) {
+	deps := testDeps(t)
+	request := fakeInstall(&deps, nil)
+	if _, err := callAPI(t, deps, []string{"install"}, `{"selection":{"agents":["claude-code"]}}`); err != nil {
+		t.Fatal(err)
+	}
+	if !request.KeepCommunityTools || len(request.Selection.CommunityTools) != 0 {
+		t.Fatalf("request = %+v", request)
+	}
 }

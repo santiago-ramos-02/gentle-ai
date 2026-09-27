@@ -91,7 +91,7 @@ The TUI asks optional questions depending on the selection. `plan` returns them 
 
 | Question | Param |
 | --- | --- |
-| `communityTools` | `communityTools` |
+| `communityTools` | `communityTools` (omit it to keep the recorded community tools; `tools.install` manages them too) |
 | `openCodePlugins` | `openCodePlugins` |
 | `skills` | `selection.skills` (omit it to keep the picker's default: every skill) |
 | `rdd` | `rdd` (omit it to leave the global review mode unchanged) |

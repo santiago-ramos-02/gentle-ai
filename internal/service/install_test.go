@@ -118,3 +118,30 @@ func buildCandidateBinary(t *testing.T) string {
 	}
 	return binary
 }
+
+func TestInstallKeepsPersistedCommunityToolsWhenAsked(t *testing.T) {
+	for _, keep := range []bool{true, false} {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		t.Setenv("USERPROFILE", home)
+		if err := state.Write(home, state.InstallState{CommunityTools: []string{"codegraph"}, CommunityToolsConfigured: true}); err != nil {
+			t.Fatal(err)
+		}
+		selection := model.Selection{Agents: []model.AgentID{model.AgentOpenCode}, Components: []model.ComponentID{}, Preset: model.PresetCustom}
+		result := Install(home, InstallRequest{Selection: selection, OpenCodeBackground: model.OpenCodeBackgroundOff, KeepCommunityTools: keep}, nil)
+		if result.Err != nil {
+			t.Fatalf("keep=%v: Install() error = %v", keep, result.Err)
+		}
+		final, err := state.Read(home)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := []string{"codegraph"}
+		if !keep {
+			want = nil
+		}
+		if !slices.Equal(final.CommunityTools, want) || !final.CommunityToolsConfigured {
+			t.Fatalf("keep=%v: community tools = %v (configured %v), want %v", keep, final.CommunityTools, final.CommunityToolsConfigured, want)
+		}
+	}
+}
