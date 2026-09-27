@@ -15,12 +15,12 @@ import (
 	"github.com/gentleman-programming/gentle-ai/v3/internal/state"
 )
 
-// Footprint is what Gentle AI added to one agent's configuration, as removing
-// it from that agent would undo it: the paths it deletes, and the shared files
+// Footprint is what Gentle AI added to some agents' configuration, as removing
+// it from them would undo it: the paths it deletes, and the shared files
 // it rewrites with their content afterwards. A host can build the agent's
 // configuration without Gentle AI from it without changing anything on disk.
 type Footprint struct {
-	Agent     string          `json:"agent"`
+	Agents    []string        `json:"agents"`
 	Removed   []string        `json:"removed"`
 	Rewritten []RewrittenFile `json:"rewritten"`
 	// Unsimulated lists paths the uninstall would touch that resolve outside
@@ -35,24 +35,32 @@ type RewrittenFile struct {
 	Content string `json:"content"`
 }
 
-// AgentFootprint simulates removing every Gentle AI component from one agent.
+// AgentFootprint simulates removing every Gentle AI component from the agents,
+// together, so rewrites of a file they share combine as they would for real.
 // The uninstall plan is built against the real home only to learn which paths
 // it touches; those paths and the install state are copied into a scratch
 // home, where the same plan runs for real. Comparing the scratch copies with
 // the originals gives the footprint. Nothing outside the scratch home is
 // written: operations whose paths resolve elsewhere are reported as
 // unsimulated instead of applied.
-func AgentFootprint(homeDir string, agent model.AgentID) (Footprint, error) {
+func AgentFootprint(homeDir string, agentIDs []model.AgentID) (Footprint, error) {
+	result := Footprint{Agents: []string{}, Removed: []string{}, Rewritten: []RewrittenFile{}, Unsimulated: []string{}}
+	if len(agentIDs) == 0 {
+		return result, nil
+	}
 	registry, err := agents.NewDefaultRegistry()
 	if err != nil {
 		return Footprint{}, fmt.Errorf("create adapter registry: %w", err)
 	}
-	if _, ok := registry.Get(agent); !ok {
-		return Footprint{}, fmt.Errorf("unsupported agent %q", agent)
+	for _, agent := range agentIDs {
+		if _, ok := registry.Get(agent); !ok {
+			return Footprint{}, fmt.Errorf("unsupported agent %q", agent)
+		}
+		result.Agents = append(result.Agents, string(agent))
 	}
 	components := footprintComponents()
 	real := &Service{homeDir: homeDir, workspaceDir: homeDir, registry: registry}
-	realPlan, err := real.buildPlan([]model.AgentID{agent}, components)
+	realPlan, err := real.buildPlan(agentIDs, components)
 	if err != nil {
 		return Footprint{}, err
 	}
@@ -63,7 +71,6 @@ func AgentFootprint(homeDir string, agent model.AgentID) (Footprint, error) {
 	}
 	defer os.RemoveAll(scratch)
 
-	result := Footprint{Agent: string(agent), Removed: []string{}, Rewritten: []RewrittenFile{}, Unsimulated: []string{}}
 	// Operations read files besides their own, such as an ownership ledger;
 	// the plan's backup targets name everything it touches or reads.
 	copyTargets := []string{state.Path(homeDir)}
@@ -90,7 +97,7 @@ func AgentFootprint(homeDir string, agent model.AgentID) (Footprint, error) {
 	}
 
 	simulated := &Service{homeDir: scratch, workspaceDir: scratch, registry: registry}
-	simPlan, err := simulated.buildPlan([]model.AgentID{agent}, components)
+	simPlan, err := simulated.buildPlan(agentIDs, components)
 	if err != nil {
 		return Footprint{}, err
 	}

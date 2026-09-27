@@ -61,7 +61,7 @@ func TestAgentFootprintReportsGentleAiPartsWithoutTouchingTheHome(t *testing.T) 
 		t.Fatal(err)
 	}
 
-	footprint, err := AgentFootprint(home, model.AgentClaudeCode)
+	footprint, err := AgentFootprint(home, []model.AgentID{model.AgentClaudeCode})
 	if err != nil {
 		t.Fatalf("AgentFootprint() error = %v", err)
 	}

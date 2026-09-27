@@ -65,7 +65,7 @@ type Deps struct {
 	Executable func() (string, error)
 	RemoveFile func(string) error
 
-	Footprint func(homeDir string, agent model.AgentID) (componentuninstall.Footprint, error)
+	Footprint func(homeDir string, agents []model.AgentID) (componentuninstall.Footprint, error)
 }
 
 // DefaultDeps wires the real services for homeDir.

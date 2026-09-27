@@ -71,10 +71,13 @@ type skillStatus struct {
 }
 
 type stateInfo struct {
-	Preset       string         `json:"preset,omitempty"`
-	Persona      string         `json:"persona,omitempty"`
-	RDDMode      string         `json:"rddMode,omitempty"`
-	PendingSync  bool           `json:"pendingSync"`
+	Preset      string `json:"preset,omitempty"`
+	Persona     string `json:"persona,omitempty"`
+	RDDMode     string `json:"rddMode,omitempty"`
+	PendingSync bool   `json:"pendingSync"`
+	// SyncNeeded says the agents' files are behind this gentle-ai: a sync is
+	// pending, or they were written by another version.
+	SyncNeeded   bool           `json:"syncNeeded"`
 	LastSyncedAt *time.Time     `json:"lastSyncedAt,omitempty"`
 	Background   backgroundInfo `json:"background"`
 }
@@ -101,7 +104,7 @@ func status(ctx context.Context, env *env, _ noParams) (any, error) {
 		Presets:          presetInfos(),
 		Personas:         personaInfos(),
 		Skills:           skillStatuses(current),
-		State:            stateSummary(current),
+		State:            stateSummary(current, env.deps.Version),
 		OpenCodeDetected: service.AgentDetected(detection, model.AgentOpenCode),
 		BuilderEngines:   strs(service.AvailableBuilderEngines(env.deps.EngineAvailable)),
 	}, nil
@@ -188,12 +191,13 @@ func skillStatuses(current state.InstallState) []skillStatus {
 	return out
 }
 
-func stateSummary(current state.InstallState) stateInfo {
+func stateSummary(current state.InstallState, version string) stateInfo {
 	return stateInfo{
 		Preset:       string(current.Preset),
 		Persona:      current.Persona,
 		RDDMode:      current.RDDMode,
 		PendingSync:  current.PendingSync,
+		SyncNeeded:   len(current.InstalledAgents) > 0 && (current.PendingSync || (current.InstalledBinaryVersion != "" && current.InstalledBinaryVersion != version)),
 		LastSyncedAt: current.LastSyncedAt,
 		Background:   backgroundInfo{OpenCode: string(current.BackgroundIntent), Pi: string(current.PiBackgroundIntent)},
 	}

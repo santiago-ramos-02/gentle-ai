@@ -49,10 +49,16 @@ type describeResult struct {
 	Version    string   `json:"version"`
 	APIVersion int      `json:"apiVersion"`
 	Methods    []string `json:"methods"`
+	// Features names the workflows this build offers, so hosts need not probe
+	// its commands: "odd" since SDD was retired.
+	Features []string `json:"features"`
 }
 
+// buildFeatures are the workflows this build of gentle-ai offers.
+var buildFeatures = []string{"odd"}
+
 func describe(_ context.Context, env *env, _ noParams) (any, error) {
-	return describeResult{Version: env.deps.Version, APIVersion: Version, Methods: MethodNames()}, nil
+	return describeResult{Version: env.deps.Version, APIVersion: Version, Methods: MethodNames(), Features: buildFeatures}, nil
 }
 
 // readState returns the persisted install state; a missing file is a fresh home.
