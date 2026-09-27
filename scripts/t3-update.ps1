@@ -7,8 +7,9 @@
 # stops before the install, so the working binary is never replaced by a
 # broken one. Runs daily from the "gentle-ai T3 update" scheduled task.
 #
-# The version is upstream's latest release plus the upstream commit built, such
-# as 3.7.0-t3.d23f490, so hosts see the real release. Self-update must stay
+# The version is upstream's latest release plus the fork commit built, such as
+# 3.7.0-t3.07988ce, so hosts see the real release and any new fork commit
+# triggers a rebuild. Self-update must stay
 # off (GENTLE_AI_NO_SELF_UPDATE=1): it would replace this build with a stock one.
 
 $ErrorActionPreference = 'Stop'
@@ -49,7 +50,7 @@ try {
 
   # Releases are tagged off main, so `git describe` would find an ancient tag.
   $release = Invoke-Git tag --sort=-v:refname | Where-Object { $_ -match '^v\d+\.\d+\.\d+$' } | Select-Object -First 1
-  $version = "$($release -replace '^v', '')-t3.$($upstream.Substring(0, 7))"
+  $version = "$($release -replace '^v', '')-t3.$((Invoke-Git rev-parse --short=7 HEAD))"
   $installed = if (Test-Path $Target) { (& $Target version 2>$null) -replace '^gentle-ai ', '' }
   if ($installed -eq $version) {
     Write-Log "up to date at $version"
