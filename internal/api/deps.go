@@ -64,6 +64,8 @@ type Deps struct {
 	Uninstall  func(homeDir, cwd string, agents []model.AgentID, components []model.ComponentID, engramScope model.EngramUninstallScope) (componentuninstall.Result, error)
 	Executable func() (string, error)
 	RemoveFile func(string) error
+
+	Footprint func(homeDir string, agent model.AgentID) (componentuninstall.Footprint, error)
 }
 
 // DefaultDeps wires the real services for homeDir.
@@ -103,6 +105,7 @@ func DefaultDeps(version, homeDir string) Deps {
 		},
 		Executable: os.Executable,
 		RemoveFile: os.Remove,
+		Footprint:  componentuninstall.AgentFootprint,
 	}
 }
 

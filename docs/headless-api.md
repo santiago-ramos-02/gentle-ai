@@ -82,6 +82,7 @@ Field names are camelCase. Lists and objects are never `null`; an optional value
 | `uninstall.plan` | `mode`, `agents`, `components`, `engramScope`, `cwd` | What the mode removes and whether project Engram cleanup is available |
 | `uninstall.run` | same as `uninstall.plan` | The uninstall report plus `binaryRemoved` or `synced` |
 | `doctor` | none | `ok` and structured `checks` |
+| `footprint` | `agent` | What removing Gentle AI from that agent would undo, without changing anything: `removed` paths, `rewritten` files with their content afterwards, and `unsimulated` paths outside the home it could not simulate. A host uses it to run the agent without Gentle AI. |
 
 The review reports keep the field names of their existing schemas.
 
