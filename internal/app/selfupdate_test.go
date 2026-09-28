@@ -1089,17 +1089,3 @@ func TestSelfUpdate_NoSelfUpdate_StillSkips_Slice5(t *testing.T) {
 func containsSubstring(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > 0 && strings.Contains(s, substr))
 }
-
-func TestSelfUpdate_SkipWhenForkBuild(t *testing.T) {
-	unsetEnv(t, envNoSelfUpdate)
-	unsetEnv(t, envSelfUpdateDone)
-
-	stubs := swapSelfUpdateDeps(t, nil, upgrade.UpgradeReport{})
-
-	if err := selfUpdate(context.Background(), "3.7.0-t3.4816ea6", stubProfile(), io.Discard); err != nil {
-		t.Fatalf("selfUpdate returned error: %v", err)
-	}
-	if stubs.checkCalled != 0 {
-		t.Errorf("expected no check call for a fork build, got %d", stubs.checkCalled)
-	}
-}

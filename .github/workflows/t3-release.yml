@@ -3,8 +3,9 @@ name: T3 fork release
 # Publishes a release of this fork for every new commit on main: gentle-ai for
 # Windows, macOS, and Linux, versioned as upstream's latest release plus the
 # fork commit, such as 3.7.0-t3.4816ea6. Upstream's release workflow ignores
-# these tags because they carry a pre-release suffix. main gets upstream's
-# changes from scripts/t3-update.ps1, which merges them and pushes.
+# these tags because they carry a pre-release suffix. Each build updates itself
+# from this repository's releases (internal/update/fork.go), and main gets
+# upstream's changes from t3-sync.yml.
 on:
   push:
     branches: [main]
@@ -62,13 +63,12 @@ jobs:
             if [ "$os" = windows ]; then binary=gentle-ai.exe; fi
             mkdir -p "build/$name"
             CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -buildvcs=false \
-              -ldflags "-s -w -X main.version=$VERSION" -o "build/$name/$binary" ./cmd/gentle-ai
+              -ldflags "-s -w -X main.version=$VERSION -X github.com/gentleman-programming/gentle-ai/v3/internal/update.forkRepository=$GITHUB_REPOSITORY" \
+              -o "build/$name/$binary" ./cmd/gentle-ai
             cp LICENSE README.md "build/$name/"
-            if [ "$os" = windows ]; then
-              (cd build && zip -qr "../dist/$name.zip" "$name")
-            else
-              tar -C build -czf "dist/$name.tar.gz" "$name"
-            fi
+            # Updates download the .tar.gz; the .zip is for installing by hand on Windows.
+            tar -C build -czf "dist/$name.tar.gz" "$name"
+            if [ "$os" = windows ]; then (cd build && zip -qr "../dist/$name.zip" "$name"); fi
           done
           (cd dist && sha256sum * > checksums.txt)
 
@@ -78,12 +78,16 @@ jobs:
           VERSION: ${{ steps.meta.outputs.version }}
           BASE: ${{ steps.meta.outputs.base }}
         run: |
-          cat > notes.md <<EOF
-          gentle-ai ${BASE} and upstream main as of $(git log -1 --format=%cs), plus this fork's headless API that T3 Code uses.
-
-          **Install:** download the archive for your system below and put \`gentle-ai\` (\`gentle-ai.exe\` on Windows) on your \`PATH\`, replacing any other copy. Check it with \`gentle-ai version\`.
-
-          This build never updates itself to an upstream release, which would remove the API. Install a newer release from this page instead.
-          EOF
+          raw="https://raw.githubusercontent.com/$GITHUB_REPOSITORY/main/scripts"
+          {
+            echo "gentle-ai $BASE and upstream main as of $(git log -1 --format=%cs), plus this fork's headless API that T3 Code uses."
+            echo
+            echo "**Install**, replacing any gentle-ai already on your \`PATH\`:"
+            echo
+            echo "- Windows (PowerShell): \`irm $raw/t3-install.ps1 | iex\`"
+            echo "- macOS and Linux: \`curl -fsSL $raw/t3-install.sh | sh\`"
+            echo
+            echo "It then updates itself from this repository's releases, the way gentle-ai updates from upstream's, and never switches back to an upstream release."
+          } > notes.md
           gh release create "v$VERSION" dist/* --target "$GITHUB_SHA" \
             --title "gentle-ai $VERSION" --notes-file notes.md --latest

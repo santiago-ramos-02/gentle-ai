@@ -691,8 +691,8 @@ func executeOne(ctx context.Context, r update.UpdateResult, profile system.Platf
 //     GoImportPath, go-install is preferred over a direct binary download.
 //  5. Otherwise the tool's declared InstallMethod is used as-is.
 func effectiveMethod(tool update.ToolInfo, profile system.PlatformProfile) update.InstallMethod {
-	if tool.InstallMethod == update.InstallOpenCodePlugin {
-		return update.InstallOpenCodePlugin
+	if tool.InstallMethod == update.InstallOpenCodePlugin || tool.InstallMethod == update.InstallForkRelease {
+		return tool.InstallMethod
 	}
 	if profile.PackageManager == "brew" && homebrewPackageInstalled(tool.Name) {
 		return update.InstallBrew

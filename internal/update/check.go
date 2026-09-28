@@ -58,6 +58,9 @@ func CheckFiltered(ctx context.Context, currentVersion string, profile system.Pl
 
 // checkSingleTool checks a single tool: detects local version, fetches remote, compares.
 func checkSingleTool(ctx context.Context, tool ToolInfo, currentBuildVersion string, profile system.PlatformProfile) UpdateResult {
+	if forkResult, ok := checkForkBuild(ctx, tool, currentBuildVersion); ok {
+		return forkResult
+	}
 	result := UpdateResult{Tool: tool}
 	homebrewOwnership := HomebrewNone
 	if profile.PackageManager == "brew" && strings.TrimSpace(tool.NpmPackage) == "" {

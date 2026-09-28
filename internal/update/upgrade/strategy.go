@@ -72,6 +72,9 @@ type strategyOutcome struct {
 //   - OpenCode plugin method → update materialized package in ~/.config/opencode when possible
 //   - unknown method → manualFallback with explicit message
 func runStrategy(ctx context.Context, r update.UpdateResult, profile system.PlatformProfile, preflightDestination ...string) (bool, error) {
+	if r.Tool.InstallMethod == update.InstallForkRelease {
+		return false, forkReleaseUpgrade(ctx, r, profile)
+	}
 	ownership := update.HomebrewNone
 	if profile.PackageManager == "brew" && r.Tool.InstallMethod != update.InstallOpenCodePlugin {
 		var err error

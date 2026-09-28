@@ -1,0 +1,56 @@
+name: T3 fork sync
+
+# Merges upstream main into this fork's main every few hours, tests the fork's
+# additions, and pushes, which publishes a release (t3-release.yml). Merging
+# (never rebasing) keeps main pushable without a force push. A conflict or a
+# failing test fails this run and leaves main as it was.
+#
+# Needs a SYNC_TOKEN secret: a token with the repo and workflow scopes. The
+# built-in token cannot push upstream's workflow changes, and its pushes would
+# not start the release.
+on:
+  schedule:
+    - cron: "17 */3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: t3-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.SYNC_TOKEN }}
+
+      - id: merge
+        name: Merge upstream main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch --quiet https://github.com/Gentleman-Programming/gentle-ai.git main
+          if git merge-base --is-ancestor FETCH_HEAD HEAD; then
+            echo "Already up to date with upstream."
+            exit 0
+          fi
+          git merge --no-edit -m "chore(fork): sync upstream" FETCH_HEAD
+          echo "merged=true" >> "$GITHUB_OUTPUT"
+
+      - if: steps.merge.outputs.merged == 'true'
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - if: steps.merge.outputs.merged == 'true'
+        name: Test and push
+        run: |
+          go test ./internal/api/... ./internal/components/uninstall/... ./internal/update/...
+          git push origin HEAD:main
