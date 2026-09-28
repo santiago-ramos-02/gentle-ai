@@ -22,8 +22,10 @@
   try {
     $archive = Join-Path $work "$name.zip"
     Invoke-WebRequest "$download/$name.zip" -OutFile $archive -UseBasicParsing
-    $checksums = (Invoke-WebRequest "$download/checksums.txt" -UseBasicParsing).Content
-    $expected = ($checksums -split "`n" | Where-Object { $_ -match "^([0-9a-f]{64})\s+$([regex]::Escape("$name.zip"))\s*$" } |
+    # GitHub serves release assets as binary, so the checksums are read from a file.
+    $checksumsFile = Join-Path $work 'checksums.txt'
+    Invoke-WebRequest "$download/checksums.txt" -OutFile $checksumsFile -UseBasicParsing
+    $expected = (Get-Content $checksumsFile | Where-Object { $_ -match "^([0-9a-f]{64})\s+$([regex]::Escape("$name.zip"))\s*$" } |
       ForEach-Object { $Matches[1] }) | Select-Object -First 1
     if (-not $expected) { throw "$name.zip is not listed in the release's checksums.txt" }
     if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne $expected) { throw "$name.zip does not match its checksum" }
