@@ -171,7 +171,7 @@ func checkSingleTool(ctx context.Context, tool ToolInfo, currentBuildVersion str
 	// "dev" is a well-known sentinel for source-built binaries — report as DevBuild
 	// so the upgrade executor knows to skip this tool without treating it as an error.
 	normalizedLocal := normalizeVersion(localVersion)
-	if normalizedLocal == "dev" {
+	if normalizedLocal == "dev" || IsForkBuild(localVersion) {
 		result.Status = DevBuild
 		return result
 	}
@@ -220,7 +220,7 @@ func applyBetaMainHeadStatus(result UpdateResult, localVersion string, commit gi
 		result.Status = VersionUnknown
 		return result
 	}
-	if strings.TrimSpace(localVersion) == "dev" {
+	if strings.TrimSpace(localVersion) == "dev" || IsForkBuild(localVersion) {
 		result.Status = DevBuild
 		return result
 	}
