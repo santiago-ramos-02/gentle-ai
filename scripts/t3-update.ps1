@@ -7,6 +7,9 @@
 # stops before the install, so the working binary is never replaced by a
 # broken one. Runs daily from the "gentle-ai T3 update" scheduled task.
 #
+# A tested main is pushed to origin, where .github/workflows/t3-release.yml
+# publishes it as a release others can install.
+#
 # The version is upstream's latest release plus the fork commit built, such as
 # 3.7.0-t3.07988ce, so hosts see the real release and any new fork commit
 # triggers a rebuild. Self-update must stay
@@ -25,6 +28,12 @@ function Write-Log([string]$Message) {
   $line = "$(Get-Date -Format s) $Message"
   Write-Host $line
   Add-Content -Path $Log -Value $line
+}
+
+# Pushes a main this script tested. A failed push only delays the release.
+function Publish-Main {
+  & git -C $Repo push --quiet origin $Branch 2>&1 | Out-Null
+  if ($LASTEXITCODE -ne 0) { Write-Log "push to origin failed; the release waits for the next run" }
 }
 
 function Invoke-Git {
@@ -53,6 +62,7 @@ try {
   $version = "$($release -replace '^v', '')-t3.$((Invoke-Git rev-parse --short=7 HEAD))"
   $installed = if (Test-Path $Target) { (& $Target version 2>$null) -replace '^gentle-ai ', '' }
   if ($installed -eq $version) {
+    Publish-Main
     Write-Log "up to date at $version"
     exit 0
   }
@@ -76,6 +86,7 @@ try {
   if (Test-Path $previous) { Remove-Item $previous -Force -ErrorAction SilentlyContinue }
   if (Test-Path $Target) { Move-Item $Target $previous -Force }
   Move-Item $build $Target -Force
+  Publish-Main
   Write-Log "installed $version (was $installed)"
 } catch {
   Write-Log "FAILED: $_"
