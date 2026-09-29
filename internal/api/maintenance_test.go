@@ -219,3 +219,45 @@ func TestUpdatesHonorCooldownUnlessForced(t *testing.T) {
 func quote(s string) string {
 	return `"` + strings.ReplaceAll(s, `\`, `\\`) + `"`
 }
+
+// Pi's plugins are its optional packages: listed from Pi's settings, installed
+// and removed through pi itself.
+func TestPiPluginsInstallThroughPi(t *testing.T) {
+	deps := testDeps(t)
+	t.Setenv("PI_CODING_AGENT_DIR", "")
+	listed := result[pluginsResult](t, deps, "plugins.list", `{"agent":"pi"}`)
+	if listed.Supported || listed.Reason == "" || len(listed.Plugins) != 1 || listed.Plugins[0].ID != "claude-bridge" {
+		t.Fatalf("Pi plugins without Pi = %+v", listed)
+	}
+	failure(t, deps, []string{"plugins.install"}, `{"agent":"pi","ids":["claude-bridge"]}`, CodeUnsupported)
+	failure(t, deps, []string{"plugins.list"}, `{"agent":"cursor"}`, CodeInvalidParams)
+
+	deps.Detect = func(context.Context) (system.DetectionResult, error) {
+		return system.DetectionResult{Configs: []system.ConfigState{{Agent: string(model.AgentPi), Exists: true}}}, nil
+	}
+	settings := filepath.Join(deps.HomeDir, ".pi", "agent", "settings.json")
+	var ran [][]string
+	deps.RunCommand = func(name string, args ...string) error {
+		ran = append(ran, append([]string{name}, args...))
+		// pi install records the package in Pi's settings, as the real one does.
+		if args[0] == "install" {
+			return writeFile(settings, `{"packages":["`+args[1]+`"]}`)
+		}
+		return writeFile(settings, `{"packages":[]}`)
+	}
+	failure(t, deps, []string{"plugins.install"}, `{"agent":"pi","ids":["sub-agent-statusline"]}`, CodeInvalidParams)
+	got := result[pluginsInstallResult](t, deps, "plugins.install", `{"agent":"pi","ids":["claude-bridge"]}`)
+	if len(got.Results) != 1 || !got.Results[0].Changed {
+		t.Fatalf("install = %+v", got)
+	}
+	listed = result[pluginsResult](t, deps, "plugins.list", `{"agent":"pi"}`)
+	if !listed.Supported || !listed.Plugins[0].Installed {
+		t.Fatalf("after install = %+v", listed)
+	}
+	result[map[string]any](t, deps, "plugins.uninstall", `{"agent":"pi","id":"claude-bridge"}`)
+	failure(t, deps, []string{"plugins.uninstall"}, `{"agent":"pi","id":"claude-bridge"}`, CodeNotFound)
+	want := [][]string{{"pi", "install", "npm:pi-claude-bridge"}, {"pi", "remove", "npm:pi-claude-bridge"}}
+	if !slices.EqualFunc(ran, want, slices.Equal[[]string]) {
+		t.Fatalf("ran %v, want %v", ran, want)
+	}
+}

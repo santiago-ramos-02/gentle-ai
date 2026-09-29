@@ -21,6 +21,7 @@ type Selection struct {
 	CodexPhaseModelAssignments       map[string]string                // key = phase name; value = model id (Custom per-phase picker only)
 	Profiles                         []Profile                        // named SDD profiles to generate/update during sync
 	OpenCodePlugins                  []OpenCodeCommunityPluginID      // optional community OpenCode TUI plugins
+	PiPlugins                        []PiPluginID                     // optional Pi packages, such as the Claude bridge
 	CommunityTools                   []CommunityToolID                // optional cross-agent community tools/plugins
 }
 

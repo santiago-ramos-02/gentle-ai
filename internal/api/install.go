@@ -8,6 +8,7 @@ import (
 	"github.com/gentleman-programming/gentle-ai/v4/internal/backup"
 	"github.com/gentleman-programming/gentle-ai/v4/internal/components/communitytool"
 	"github.com/gentleman-programming/gentle-ai/v4/internal/components/opencodeplugin"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/components/piplugin"
 	"github.com/gentleman-programming/gentle-ai/v4/internal/model"
 	"github.com/gentleman-programming/gentle-ai/v4/internal/pipeline"
 	"github.com/gentleman-programming/gentle-ai/v4/internal/service"
@@ -22,6 +23,7 @@ type installParams struct {
 	Models          *modelsParams     `json:"models"`
 	CommunityTools  []string          `json:"communityTools"`
 	OpenCodePlugins []string          `json:"openCodePlugins"`
+	PiPlugins       []string          `json:"piPlugins"`
 	RDD             *bool             `json:"rdd"`
 	Background      *backgroundParams `json:"background"`
 	// Cwd is the repository the RDD status is resolved for; defaults to home.
@@ -90,6 +92,12 @@ func install(ctx context.Context, env *env, params installParams) (any, error) {
 	}
 	if len(selection.OpenCodePlugins) > 0 && !service.AsksOpenCodePlugins(selection) {
 		return nil, invalidParams("openCodePlugins need the opencode agent in the selection")
+	}
+	if selection.PiPlugins, err = piPluginIDs(params.PiPlugins); err != nil {
+		return nil, err
+	}
+	if len(selection.PiPlugins) > 0 && !service.AsksPiPlugins(selection) {
+		return nil, invalidParams("piPlugins need the pi agent in the selection")
 	}
 	resolved, err := resolvePlan(selection)
 	if err != nil {
@@ -173,6 +181,18 @@ func openCodePluginIDs(raw []string) ([]model.OpenCodeCommunityPluginID, error) 
 		id := model.OpenCodeCommunityPluginID(value)
 		if !slices.ContainsFunc(opencodeplugin.Definitions(), func(def opencodeplugin.Definition) bool { return def.ID == id }) {
 			return nil, invalidParams("unknown OpenCode plugin %q", value)
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
+func piPluginIDs(raw []string) ([]model.PiPluginID, error) {
+	ids := make([]model.PiPluginID, 0, len(raw))
+	for _, value := range raw {
+		id := model.PiPluginID(value)
+		if _, ok := piplugin.DefinitionFor(id); !ok {
+			return nil, invalidParams("unknown Pi plugin %q", value)
 		}
 		ids = append(ids, id)
 	}

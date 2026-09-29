@@ -235,6 +235,11 @@ const (
 	OpenCodePluginGentleLogo         OpenCodeCommunityPluginID = "gentle-logo"
 )
 
+// PiPluginID names an optional Pi package Gentle AI offers, such as the Claude bridge.
+type PiPluginID string
+
+const PiPluginClaudeBridge PiPluginID = "claude-bridge"
+
 type CommunityToolID string
 
 const (

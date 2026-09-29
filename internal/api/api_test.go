@@ -294,7 +294,7 @@ func TestPlanAsksTheInstallerQuestionsForTheSelection(t *testing.T) {
 
 	// Pi alone skips optional community setup and installs only memory.
 	pi := result[planResult](t, deps, "plan", `{"selection":{"agents":["pi"]}}`)
-	if !slices.Equal(pi.Questions, []string{"rdd", "piBackground"}) || !slices.Equal(pi.Components, []string{"engram"}) {
+	if !slices.Equal(pi.Questions, []string{"piPlugins", "rdd", "piBackground"}) || !slices.Equal(pi.Components, []string{"engram"}) {
 		t.Errorf("pi plan = %+v", pi)
 	}
 

@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	"github.com/gentleman-programming/gentle-ai/v4/internal/components/opencodeplugin"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/components/piplugin"
 	"github.com/gentleman-programming/gentle-ai/v4/internal/model"
 	"github.com/gentleman-programming/gentle-ai/v4/internal/service"
 )
@@ -23,14 +24,51 @@ type pluginsResult struct {
 	Reason    string       `json:"reason,omitempty"`
 }
 
-const openCodeMissingReason = "OpenCode was not detected on this machine"
+const (
+	openCodeMissingReason = "OpenCode was not detected on this machine"
+	piMissingReason       = "Pi was not detected on this machine"
+)
+
+// pluginAgentParams names whose plugins a method is about: "opencode" (the
+// default, for callers from before Pi had plugins) or "pi".
+type pluginAgentParams struct {
+	Agent string `json:"agent"`
+}
+
+func (p pluginAgentParams) pi() (bool, error) {
+	switch p.Agent {
+	case "", string(model.AgentOpenCode):
+		return false, nil
+	case string(model.AgentPi):
+		return true, nil
+	default:
+		return false, invalidParams("plugins are offered for opencode and pi, not %q", p.Agent)
+	}
+}
 
 // listPlugins offers the installable OpenCode community plugins plus any
-// installed plugin that is no longer offered, so it can still be removed.
-func listPlugins(ctx context.Context, env *env, _ noParams) (any, error) {
+// installed plugin that is no longer offered, so it can still be removed; or,
+// for Pi, the optional Pi packages and which of them Pi declares.
+func listPlugins(ctx context.Context, env *env, params pluginAgentParams) (any, error) {
+	isPi, err := params.pi()
+	if err != nil {
+		return nil, err
+	}
 	detection, err := env.deps.detect(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if isPi {
+		installed := piplugin.InstalledIDs(env.deps.HomeDir)
+		plugins := []pluginInfo{}
+		for _, def := range piplugin.Definitions() {
+			plugins = append(plugins, pluginInfo{ID: string(def.ID), Name: def.Name, Description: def.Description, RepoURL: def.RepoURL, Installed: slices.Contains(installed, def.ID)})
+		}
+		result := pluginsResult{Plugins: plugins, Supported: service.AgentDetected(detection, model.AgentPi)}
+		if !result.Supported {
+			result.Reason = piMissingReason
+		}
+		return result, nil
 	}
 	installed := opencodeplugin.InstalledIDs(env.deps.HomeDir)
 	plugins := []pluginInfo{}
@@ -57,6 +95,7 @@ func listPlugins(ctx context.Context, env *env, _ noParams) (any, error) {
 }
 
 type pluginIDsParams struct {
+	pluginAgentParams
 	IDs []string `json:"ids"`
 }
 
@@ -85,6 +124,13 @@ func installPlugins(ctx context.Context, env *env, params pluginIDsParams) (any,
 	if len(params.IDs) == 0 {
 		return nil, invalidParams("ids must name at least one plugin")
 	}
+	isPi, err := params.pi()
+	if err != nil {
+		return nil, err
+	}
+	if isPi {
+		return installPiPlugins(ctx, env, params.IDs)
+	}
 	ids := make([]model.OpenCodeCommunityPluginID, 0, len(params.IDs))
 	for _, raw := range params.IDs {
 		id := model.OpenCodeCommunityPluginID(raw)
@@ -108,6 +154,7 @@ func installPlugins(ctx context.Context, env *env, params pluginIDsParams) (any,
 }
 
 type pluginIDParams struct {
+	pluginAgentParams
 	ID string `json:"id"`
 }
 
@@ -128,6 +175,13 @@ func uninstallPlugin(_ context.Context, env *env, params pluginIDParams) (any, e
 	if params.ID == "" {
 		return nil, invalidParams("id is required")
 	}
+	isPi, err := params.pi()
+	if err != nil {
+		return nil, err
+	}
+	if isPi {
+		return uninstallPiPlugin(env, params.ID)
+	}
 	id := model.OpenCodeCommunityPluginID(params.ID)
 	if !slices.Contains(opencodeplugin.InstalledIDs(env.deps.HomeDir), id) {
 		return nil, errorf(CodeNotFound, "OpenCode plugin %q is not installed", params.ID)
@@ -146,4 +200,42 @@ func uninstallPlugin(_ context.Context, env *env, params pluginIDParams) (any, e
 		TSXPath:            result.TSXPath,
 		CleanupPending:     orEmpty(result.CleanupPending),
 	}, nil
+}
+
+func installPiPlugins(ctx context.Context, env *env, raw []string) (any, error) {
+	ids, err := piPluginIDs(raw)
+	if err != nil {
+		return nil, err
+	}
+	detection, err := env.deps.detect(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !service.AgentDetected(detection, model.AgentPi) {
+		return nil, errorf(CodeUnsupported, "%s", piMissingReason)
+	}
+	before := piplugin.InstalledIDs(env.deps.HomeDir)
+	if err := piplugin.Install(env.deps.RunCommand, ids); err != nil {
+		return nil, errorf(CodeFailed, "install Pi plugins: %v", err)
+	}
+	out := make([]pluginInstallResult, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, pluginInstallResult{ID: string(id), Changed: !slices.Contains(before, id), Files: []string{}})
+	}
+	return pluginsInstallResult{Results: out}, nil
+}
+
+type piPluginUninstallResult struct {
+	PluginID string `json:"pluginId"`
+}
+
+func uninstallPiPlugin(env *env, raw string) (any, error) {
+	id := model.PiPluginID(raw)
+	if !slices.Contains(piplugin.InstalledIDs(env.deps.HomeDir), id) {
+		return nil, errorf(CodeNotFound, "Pi plugin %q is not installed", raw)
+	}
+	if err := piplugin.Uninstall(env.deps.RunCommand, id); err != nil {
+		return nil, errorf(CodeFailed, "uninstall Pi plugin %s: %v", raw, err)
+	}
+	return piPluginUninstallResult{PluginID: raw}, nil
 }

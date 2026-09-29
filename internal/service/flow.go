@@ -20,6 +20,7 @@ type InstallQuestion string
 const (
 	QuestionCommunityTools     InstallQuestion = "communityTools"
 	QuestionOpenCodePlugins    InstallQuestion = "openCodePlugins"
+	QuestionPiPlugins          InstallQuestion = "piPlugins"
 	QuestionSkills             InstallQuestion = "skills"
 	QuestionRDD                InstallQuestion = "rdd"
 	QuestionOpenCodeBackground InstallQuestion = "openCodeBackground"
@@ -37,6 +38,9 @@ func InstallQuestions(selection model.Selection, priorOpenCode model.OpenCodeBac
 	}
 	if AsksOpenCodePlugins(selection) {
 		questions = append(questions, QuestionOpenCodePlugins)
+	}
+	if AsksPiPlugins(selection) {
+		questions = append(questions, QuestionPiPlugins)
 	}
 	if AsksSkills(selection) {
 		questions = append(questions, QuestionSkills)
@@ -83,6 +87,11 @@ func AsksCommunityTools(selection model.Selection) bool {
 // AsksOpenCodePlugins reports whether the installer offers OpenCode plugins.
 func AsksOpenCodePlugins(selection model.Selection) bool {
 	return selection.HasAgent(model.AgentOpenCode)
+}
+
+// AsksPiPlugins reports whether the installer offers optional Pi packages.
+func AsksPiPlugins(selection model.Selection) bool {
+	return selection.HasAgent(model.AgentPi)
 }
 
 // AsksSkills reports whether the installer offers the per-skill picker: only

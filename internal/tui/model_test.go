@@ -616,8 +616,8 @@ func TestPiCombinedWithOtherAgentsTUIInstallKeepsAllAgentsInPlan(t *testing.T) {
 		return reviewtransaction.RDDModeStatus{Schema: reviewtransaction.RDDModeStatusSchema, Global: reviewtransaction.RDDModeOff}, nil
 	}
 	state.Cursor = 0
-	updated, load := state.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	state = updated.(Model)
+	updated, first := state.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	state, load := continuePastPiPlugins(t, updated.(Model), first)
 	if state.Screen != ScreenInstallReviewMode || load == nil {
 		t.Fatalf("after dependency tree screen = %v, want loaded ScreenInstallReviewMode", state.Screen)
 	}
@@ -749,8 +749,8 @@ func TestInstallReviewModeChoicePrecedesReviewAndPersistsOnlyAfterSuccess(t *tes
 		return reviewtransaction.RDDModeStatus{Schema: reviewtransaction.RDDModeStatusSchema, Global: reviewtransaction.RDDModeOn}, nil
 	}
 
-	updated, load := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	state := updated.(Model)
+	updated, first := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	state, load := continuePastPiPlugins(t, updated.(Model), first)
 	if state.Screen != ScreenInstallReviewMode || load == nil {
 		t.Fatalf("after dependency confirmation = screen %v, command %v; want install review mode with loader", state.Screen, load != nil)
 	}
@@ -824,16 +824,17 @@ func TestInstallReviewModeReadFailureDoesNotChooseOff(t *testing.T) {
 		return reviewtransaction.RDDModeStatus{}, errors.New("cannot read mode")
 	}
 
-	updated, load := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	state := updated.(Model)
+	updated, first := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	state, load := continuePastPiPlugins(t, updated.(Model), first)
 	updated, _ = state.Update(load())
 	state = updated.(Model)
 	if state.InstallReviewModeChoiceSet || state.InstallReviewModeEnabled {
 		t.Fatalf("unreadable status chose a mode: set/enabled = %t/%t", state.InstallReviewModeChoiceSet, state.InstallReviewModeEnabled)
 	}
 	updated, _ = state.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	if got := updated.(Model).Screen; got != ScreenDependencyTree {
-		t.Fatalf("status-error Enter screen = %v, want ScreenDependencyTree", got)
+	// Back returns to the step before: the Pi plugins, since the selection includes Pi.
+	if got := updated.(Model).Screen; got != ScreenPiPlugins {
+		t.Fatalf("status-error Enter screen = %v, want ScreenPiPlugins", got)
 	}
 }
 
@@ -8132,5 +8133,58 @@ func TestMarkPendingSyncUnderLockReReadsLatestStateAfterLockContention(t *testin
 	}
 	if got.RDDMode != string(reviewtransaction.RDDModeOn) {
 		t.Fatalf("concurrent RDDMode clobbered: got %q, want %q", got.RDDMode, reviewtransaction.RDDModeOn)
+	}
+}
+
+// continuePastPiPlugins chooses Continue on the Pi plugins screen when the
+// selection includes Pi, returning the screen after it and its command.
+func continuePastPiPlugins(t *testing.T, m Model, cmd tea.Cmd) (Model, tea.Cmd) {
+	t.Helper()
+	if m.Screen != ScreenPiPlugins {
+		return m, cmd
+	}
+	m.Cursor = screens.PiPluginsOptionCount() - 2
+	updated, next := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	return updated.(Model), next
+}
+
+// With Pi selected, the installer offers the Pi plugins between the dependency
+// tree and the RDD choice; toggling picks one, and Back returns where it came from.
+func TestPiPluginsOfferedBeforeTheRDDChoice(t *testing.T) {
+	m := NewModel(system.DetectionResult{}, "dev")
+	m.Selection.Agents = []model.AgentID{model.AgentPi}
+	m.Screen = ScreenDependencyTree
+	m.Cursor = 0
+	m.ReviewModeCwdFn = func() (string, error) { return "/repo", nil }
+	m.ReviewModeStatusFn = func(context.Context, string) (reviewtransaction.RDDModeStatus, error) {
+		return reviewtransaction.RDDModeStatus{Schema: reviewtransaction.RDDModeStatusSchema, Global: reviewtransaction.RDDModeUnset}, nil
+	}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	state := updated.(Model)
+	if state.Screen != ScreenPiPlugins {
+		t.Fatalf("after the dependency tree = %v, want ScreenPiPlugins", state.Screen)
+	}
+	state.Cursor = 0
+	updated, _ = state.Update(tea.KeyMsg{Type: tea.KeySpace})
+	state = updated.(Model)
+	if !slices.Equal(state.Selection.PiPlugins, []model.PiPluginID{model.PiPluginClaudeBridge}) {
+		t.Fatalf("after toggling = %v, want the Claude bridge", state.Selection.PiPlugins)
+	}
+
+	updated, _ = state.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if got := updated.(Model).Screen; got != ScreenDependencyTree {
+		t.Fatalf("Esc from the Pi plugins = %v, want ScreenDependencyTree", got)
+	}
+
+	state.Cursor = screens.PiPluginsOptionCount() - 2
+	updated, load := state.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	state = updated.(Model)
+	if state.Screen != ScreenInstallReviewMode || load == nil {
+		t.Fatalf("Continue = %v, want the RDD choice loading", state.Screen)
+	}
+	updated, _ = state.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if got := updated.(Model).Screen; got != ScreenPiPlugins {
+		t.Fatalf("Esc from the RDD choice = %v, want ScreenPiPlugins", got)
 	}
 }

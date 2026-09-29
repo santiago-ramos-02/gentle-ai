@@ -38,6 +38,7 @@ import (
 	"github.com/gentleman-programming/gentle-ai/v4/internal/components/opencoderuntimeplugins"
 	"github.com/gentleman-programming/gentle-ai/v4/internal/components/permissions"
 	"github.com/gentleman-programming/gentle-ai/v4/internal/components/persona"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/components/piplugin"
 	"github.com/gentleman-programming/gentle-ai/v4/internal/components/reviewassets"
 	"github.com/gentleman-programming/gentle-ai/v4/internal/components/skills"
 	"github.com/gentleman-programming/gentle-ai/v4/internal/components/telemetryruntime"
@@ -831,6 +832,10 @@ func (r *installRuntime) stagePlan() pipeline.StagePlan {
 		for _, plugin := range r.selection.OpenCodePlugins {
 			apply = append(apply, openCodePluginInstallStep{id: "opencode-plugin:" + string(plugin), plugin: plugin, homeDir: r.homeDir})
 		}
+	}
+
+	if containsAgent(r.resolved.Agents, model.AgentPi) && len(r.selection.PiPlugins) > 0 {
+		apply = append(apply, piPluginsInstallStep{id: "pi-plugins", plugins: r.selection.PiPlugins})
 	}
 
 	for _, component := range r.resolved.OrderedComponents {
@@ -1825,6 +1830,24 @@ func (s openCodePluginInstallStep) ID() string { return s.id }
 func (s openCodePluginInstallStep) Run() error {
 	_, err := opencodeplugin.Install(s.homeDir, s.plugin)
 	return err
+}
+
+// piPluginsInstallStep installs the optional Pi packages the user picked, after
+// Pi's own package stack.
+type piPluginsInstallStep struct {
+	id      string
+	plugins []model.PiPluginID
+}
+
+func (s piPluginsInstallStep) ID() string { return s.id }
+
+func (s piPluginsInstallStep) Run() error {
+	return piplugin.Install(runCommand, s.plugins)
+}
+
+// RunCommand runs one command the way the installer does, for callers outside it.
+func RunCommand(name string, args ...string) error {
+	return runCommand(name, args...)
 }
 
 func (s agentInstallStep) ID() string {

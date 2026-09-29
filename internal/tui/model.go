@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -26,6 +27,7 @@ import (
 	"github.com/gentleman-programming/gentle-ai/v4/internal/components/communitytool"
 	"github.com/gentleman-programming/gentle-ai/v4/internal/components/filemerge"
 	"github.com/gentleman-programming/gentle-ai/v4/internal/components/opencodeplugin"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/components/piplugin"
 	componentuninstall "github.com/gentleman-programming/gentle-ai/v4/internal/components/uninstall"
 	"github.com/gentleman-programming/gentle-ai/v4/internal/model"
 	"github.com/gentleman-programming/gentle-ai/v4/internal/opencode"
@@ -602,6 +604,9 @@ const (
 	ScreenReviewStoreResetResult
 	// ScreenReviewMode displays and changes the global review-mode switch.
 	ScreenReviewMode
+	// ScreenPiPlugins offers optional Pi packages, such as the Claude bridge,
+	// right before the install review when Pi is being set up.
+	ScreenPiPlugins
 )
 
 type Model struct {
@@ -640,6 +645,8 @@ type Model struct {
 	PiBackgroundIntent         model.PiBackgroundIntent
 	PiBackgroundPersist        model.PiBackgroundIntent
 	piBackgroundPromptOriginal model.PiBackgroundIntent
+	// piPluginsBack is the screen ScreenPiPlugins was entered from, where Back returns.
+	piPluginsBack Screen
 
 	// SelectedBackup holds the manifest chosen on ScreenBackups, used by the
 	// restore confirmation and result screens.
@@ -1521,6 +1528,8 @@ func (m Model) View() string {
 			return screens.RenderOperationRunning("Installing OpenCode Plugins", "Registering selected plugins...", m.SpinnerFrame)
 		}
 		return screens.RenderOpenCodePlugins(m.Selection.OpenCodePlugins, m.Cursor)
+	case ScreenPiPlugins:
+		return screens.RenderPiPlugins(m.Selection.PiPlugins, m.Cursor)
 	case ScreenOpenCodePluginResult:
 		return screens.RenderOpenCodePluginResult(m.OpenCodePluginRegistrationResults, m.OpenCodePluginRegistrationErr)
 	case ScreenOpenCodePluginUninstall:
@@ -1924,6 +1933,8 @@ func (m Model) handleKeyPress(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.toggleCurrentSkill()
 		case ScreenOpenCodePlugins:
 			m.toggleCurrentOpenCodePlugin()
+		case ScreenPiPlugins:
+			m.toggleCurrentPiPlugin()
 		case ScreenCommunityTools:
 			m.toggleCurrentCommunityTool()
 		}
@@ -2469,6 +2480,8 @@ func (m Model) confirmSelection() (tea.Model, tea.Cmd) {
 		m.setScreen(ScreenModelConfig)
 	case ScreenOpenCodePlugins:
 		return m.confirmOpenCodePlugins()
+	case ScreenPiPlugins:
+		return m.confirmPiPlugins()
 	case ScreenOpenCodePluginResult:
 		m.OpenCodePluginsStandalone = false
 		m.Selection.OpenCodePlugins = nil
@@ -2532,7 +2545,7 @@ func (m Model) confirmSelection() (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				m.Review = planner.BuildReviewPayload(m.Selection, m.DependencyPlan)
-				return m.startInstallReviewModeLoad()
+				return m.continueToInstallReviewMode()
 			default:
 				m.setScreen(ScreenPreset)
 			}
@@ -2540,7 +2553,7 @@ func (m Model) confirmSelection() (tea.Model, tea.Cmd) {
 		}
 		if m.Cursor == 0 {
 			m.Review = planner.BuildReviewPayload(m.Selection, m.DependencyPlan)
-			return m.startInstallReviewModeLoad()
+			return m.continueToInstallReviewMode()
 		}
 		// Non-custom Back: mirrors goBack (Esc) — isPiOnlyAgents early check,
 		// then optional setup guards (outside the slice), then pickerPreviousScreen.
@@ -2569,7 +2582,7 @@ func (m Model) confirmSelection() (tea.Model, tea.Cmd) {
 			m.Selection.Skills = make([]model.SkillID, len(m.SkillPicker))
 			copy(m.Selection.Skills, m.SkillPicker)
 			m.Review = planner.BuildReviewPayload(m.Selection, m.DependencyPlan)
-			return m.startInstallReviewModeLoad()
+			return m.continueToInstallReviewMode()
 		default:
 			// "Back" — in custom preset, return to the screen that preceded SkillPicker.
 			if m.Selection.Preset == model.PresetCustom {
@@ -2585,6 +2598,10 @@ func (m Model) confirmSelection() (tea.Model, tea.Cmd) {
 	case ScreenInstallReviewMode:
 		options := screens.InstallReviewModeOptions(m.InstallReviewModeLoadErr)
 		if m.Cursor >= len(options) || m.Cursor == len(options)-1 {
+			if m.shouldShowPiPluginsScreen() {
+				m.setScreen(ScreenPiPlugins)
+				return m, nil
+			}
 			m.setScreen(ScreenDependencyTree)
 			return m, nil
 		}
@@ -3081,6 +3098,51 @@ func (m Model) startOpenCodePluginUninstall() tea.Cmd {
 // read-only survey behind a spinner. The screen is entered first on purpose: a
 // survey that fails has to be reportable, and a menu entry that silently does
 // nothing is worse than one that explains itself.
+// continueToInstallReviewMode offers the optional Pi packages when Pi is being
+// set up, then the installer's RDD choice.
+func (m Model) continueToInstallReviewMode() (tea.Model, tea.Cmd) {
+	if m.shouldShowPiPluginsScreen() && m.Screen != ScreenPiPlugins {
+		m.piPluginsBack = m.Screen
+		m.setScreen(ScreenPiPlugins)
+		return m, nil
+	}
+	return m.startInstallReviewModeLoad()
+}
+
+func (m Model) shouldShowPiPluginsScreen() bool {
+	return m.Selection.HasAgent(model.AgentPi) && len(piplugin.Definitions()) > 0
+}
+
+func (m *Model) toggleCurrentPiPlugin() {
+	defs := piplugin.Definitions()
+	if m.Cursor%2 != 0 || m.Cursor/2 >= len(defs) {
+		return
+	}
+	id := defs[m.Cursor/2].ID
+	if index := slices.Index(m.Selection.PiPlugins, id); index >= 0 {
+		m.Selection.PiPlugins = slices.Delete(m.Selection.PiPlugins, index, index+1)
+		return
+	}
+	m.Selection.PiPlugins = append(m.Selection.PiPlugins, id)
+}
+
+func (m Model) confirmPiPlugins() (tea.Model, tea.Cmd) {
+	defs := piplugin.Definitions()
+	pluginRows := len(defs) * 2
+	switch {
+	case m.Cursor < pluginRows && m.Cursor%2 == 0:
+		m.toggleCurrentPiPlugin()
+		return m, nil
+	case m.Cursor < pluginRows:
+		return m, openBrowserCmd(defs[m.Cursor/2].RepoURL)
+	case m.Cursor == pluginRows:
+		return m.startInstallReviewModeLoad()
+	default:
+		m.setScreen(m.piPluginsBack)
+		return m, nil
+	}
+}
+
 func (m Model) startInstallReviewModeLoad() (tea.Model, tea.Cmd) {
 	m.InstallReviewModeStatus = reviewtransaction.RDDModeStatus{}
 	m.InstallReviewModeLoadErr = nil
@@ -3799,6 +3861,15 @@ func (m Model) goBack(cmd *tea.Cmd) Model {
 		}
 	}
 
+	if m.Screen == ScreenPiPlugins {
+		m.setScreen(m.piPluginsBack)
+		return m
+	}
+	if m.Screen == ScreenInstallReviewMode && m.shouldShowPiPluginsScreen() {
+		m.setScreen(ScreenPiPlugins)
+		return m
+	}
+
 	// OpenCodePluginsStandalone is handled before returning through the picker chain.
 	if m.Screen == ScreenOpenCodePlugins {
 		return m.goBackFromOpenCodePlugins()
@@ -3999,6 +4070,8 @@ func (m Model) optionCount() int {
 		return screens.CodexModelPickerOptionCount(m.CodexModelPicker)
 	case ScreenOpenCodePlugins:
 		return screens.OpenCodePluginsOptionCount()
+	case ScreenPiPlugins:
+		return screens.PiPluginsOptionCount()
 	case ScreenOpenCodePluginResult:
 		return 0
 	case ScreenOpenCodePluginUninstall:
@@ -4295,7 +4368,7 @@ func (m Model) continueAfterCommunityTools() (tea.Model, tea.Cmd) {
 			m.setScreen(ScreenSkillPicker)
 		} else {
 			m.Review = planner.BuildReviewPayload(m.Selection, m.DependencyPlan)
-			return m.startInstallReviewModeLoad()
+			return m.continueToInstallReviewMode()
 		}
 		return m, nil
 	}
@@ -4377,7 +4450,7 @@ func (m Model) continueAfterOpenCodePlugins() (tea.Model, tea.Cmd) {
 			m.setScreen(ScreenSkillPicker)
 		} else {
 			m.Review = planner.BuildReviewPayload(m.Selection, m.DependencyPlan)
-			return m.startInstallReviewModeLoad()
+			return m.continueToInstallReviewMode()
 		}
 		return m, nil
 	}

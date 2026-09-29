@@ -39,6 +39,8 @@ type Deps struct {
 
 	InstallPlugins  func(homeDir string, ids []model.OpenCodeCommunityPluginID) ([]opencodeplugin.Result, error)
 	UninstallPlugin func(homeDir string, id model.OpenCodeCommunityPluginID) (opencodeplugin.UninstallResult, error)
+	// RunCommand runs one command, such as `pi install` for a Pi plugin.
+	RunCommand func(name string, args ...string) error
 
 	ReviewMode        func(ctx context.Context, cwd, operation, scope string) (cli.ReviewModeResult, error)
 	SurveyReviewStore func(ctx context.Context, cwd string, request reviewtransaction.StoreResetRequest) (reviewtransaction.StoreResetReport, error)
@@ -81,6 +83,7 @@ func DefaultDeps(version, homeDir string) Deps {
 		RestoreBackup:       backup.RestoreService{}.Restore,
 		InstallPlugins:      opencodeplugin.InstallAll,
 		UninstallPlugin:     opencodeplugin.Uninstall,
+		RunCommand:          cli.RunCommand,
 		ReviewMode:          cli.ReviewMode,
 		SurveyReviewStore:   reviewtransaction.SurveyReviewStore,
 		ResetReviewStore:    reviewtransaction.ResetReviewStore,
