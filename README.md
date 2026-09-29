@@ -206,25 +206,28 @@ Gentle-AI brings its shared workflow to Pi, OpenCode, Claude Code, Codex, and th
 
 ## Get started
 
-```bash
-# macOS (Homebrew)
-brew install gentleman-programming/tap/gentle-ai
+> **This is [santiago-ramos-02](https://github.com/santiago-ramos-02)'s fork of [Gentle AI](https://github.com/Gentleman-Programming/gentle-ai).** It follows upstream `main` and adds the headless API [T3 Code](https://github.com/santiago-ramos-02/t3code) uses, proxy-aware Claude Code models and profiles, and Pi setup with the [forked gentle-pi](https://github.com/santiago-ramos-02/gentle-shell). Every push to `main` publishes a release.
 
-# macOS / Linux (curl)
-curl -fsSL https://raw.githubusercontent.com/Gentleman-Programming/gentle-ai/main/scripts/install.sh | bash
-
-# Windows (PowerShell) — source install, needs Go 1.25.10+
-go install github.com/gentleman-programming/gentle-ai/v4/cmd/gentle-ai@latest
+```powershell
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/santiago-ramos-02/gentle-ai/main/scripts/t3-install.ps1 | iex
 ```
+
+```bash
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/santiago-ramos-02/gentle-ai/main/scripts/t3-install.sh | sh
+```
+
+The installer replaces any `gentle-ai` already on your `PATH`. From then on it updates itself from [this fork's releases](https://github.com/santiago-ramos-02/gentle-ai/releases), never from upstream's. Check it with `gentle-ai version`; fork builds end in `-t3.<commit>`.
 
 ```bash
 gentle-ai          # pick your agents, components and persona
 gentle-ai doctor   # verify — read-only, changes nothing
 ```
 
-Then use your agent normally. Your configs are snapshotted before every write, and **Gentle-AI never installs an AI agent for you** — it configures what you already have.
+Or set it up from **Settings > Gentle AI** in [T3 Code](https://github.com/santiago-ramos-02/t3code). Your configs are snapshotted before every write, and **Gentle-AI never installs an AI agent for you** — it configures what you already have.
 
-> **Beta channel, signature verification and per-distro prerequisites: [Quickstart →](docs/quickstart.md)**
+To go back to the official release, install it from [Gentleman-Programming/gentle-ai](https://github.com/Gentleman-Programming/gentle-ai#get-started).
 
 <div align="right"><a href="#top">Back to top</a></div>
 
