@@ -63,7 +63,7 @@ jobs:
             if [ "$os" = windows ]; then binary=gentle-ai.exe; fi
             mkdir -p "build/$name"
             CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -buildvcs=false \
-              -ldflags "-s -w -X main.version=$VERSION -X github.com/gentleman-programming/gentle-ai/v3/internal/update.forkRepository=$GITHUB_REPOSITORY" \
+              -ldflags "-s -w -X main.version=$VERSION -X github.com/gentleman-programming/gentle-ai/v3/internal/update.forkRepository=$GITHUB_REPOSITORY -X github.com/gentleman-programming/gentle-ai/v3/internal/agents/pi.gentlePiSource=git:github.com/$GITHUB_REPOSITORY_OWNER/gentle-shell" \
               -o "build/$name/$binary" ./cmd/gentle-ai
             cp LICENSE README.md "build/$name/"
             # Updates download the .tar.gz; the .zip is for installing by hand on Windows.

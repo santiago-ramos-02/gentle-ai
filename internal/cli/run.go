@@ -20,6 +20,7 @@ import (
 	codexagent "github.com/gentleman-programming/gentle-ai/v3/internal/agents/codex"
 	"github.com/gentleman-programming/gentle-ai/v3/internal/agents/kimi"
 	opencodeagent "github.com/gentleman-programming/gentle-ai/v3/internal/agents/opencode"
+	piagent "github.com/gentleman-programming/gentle-ai/v3/internal/agents/pi"
 	"github.com/gentleman-programming/gentle-ai/v3/internal/assets"
 	"github.com/gentleman-programming/gentle-ai/v3/internal/backup"
 	"github.com/gentleman-programming/gentle-ai/v3/internal/components/agentguidance"
@@ -1836,6 +1837,10 @@ func (s agentInstallStep) Run() error {
 	commands, err := adapter.InstallCommand(s.profile)
 	if err != nil {
 		return fmt.Errorf("resolve install command for %q: %w", s.agent, err)
+	}
+	// Pi loads every declared gentle-pi, so only the one about to be installed may remain.
+	if err := piagent.PrepareGentlePiSource(s.homeDir); err != nil {
+		return fmt.Errorf("prepare gentle-pi for %q: %w", s.agent, err)
 	}
 	if len(commands) == 0 {
 		return fmt.Errorf("install command for %q resolved to an empty sequence (unsupported platform or resolver misconfiguration)", s.agent)

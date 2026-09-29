@@ -56,7 +56,7 @@ var retiredPiPackageIdentities = map[string]struct{}{
 }
 
 var managedPackageSources = []string{
-	"npm:gentle-pi",
+	gentlePiSource,
 	piGentleEngramPackageSource,
 	piMCPAdapterPackage,
 	"npm:pi-web-access",
