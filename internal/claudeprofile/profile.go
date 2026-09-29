@@ -58,6 +58,20 @@ type Store struct {
 	// profile was first applied, restored when no profile is applied; a null value
 	// means the variable was absent.
 	OriginalEnv map[string]*string `json:"originalEnv,omitempty"`
+	// Host names the app that launches Claude Code, such as "t3", when it applies the
+	// profile itself: to the Claude Code it runs through a proxy, rather than to every
+	// Claude Code on the machine. gentle-ai then leaves Claude Code's settings and
+	// CLAUDE.md alone and writes the host setup (HostPath) instead.
+	Host string `json:"host,omitempty"`
+}
+
+// HostSetup is what a host applies to the Claude Code it launches through a proxy.
+type HostSetup struct {
+	Profile string `json:"profile"`
+	// Env holds the slot variables (ANTHROPIC_DEFAULT_<SLOT>_MODEL) the profile sets.
+	Env map[string]string `json:"env"`
+	// Guide is the orchestrator guidance for the slots, for the system prompt; may be empty.
+	Guide string `json:"guide"`
 }
 
 var (
@@ -146,6 +160,36 @@ func Save(homeDir string, store Store) error {
 		return err
 	}
 	_, err = filemerge.WriteFileAtomic(Path(homeDir), append(encoded, '\n'), 0o644)
+	return err
+}
+
+// HostPath is where gentle-ai writes the host setup of the applied profile.
+func HostPath(homeDir string) string {
+	return filepath.Join(homeDir, ".gentle-ai", "claude-host.json")
+}
+
+// WriteHostSetup writes the host setup for profile, or removes it when profile is nil.
+func WriteHostSetup(homeDir string, profile *Profile) error {
+	if profile == nil {
+		if err := os.Remove(HostPath(homeDir)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		return nil
+	}
+	setup := HostSetup{Profile: profile.Name, Env: map[string]string{}, Guide: strings.TrimSpace(Guide(*profile))}
+	for _, slot := range Slots {
+		if model := profile.Slots[slot].Model; model != "" {
+			setup.Env[EnvVar(slot)] = model
+		}
+	}
+	encoded, err := json.MarshalIndent(setup, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(HostPath(homeDir)), 0o755); err != nil {
+		return err
+	}
+	_, err = filemerge.WriteFileAtomic(HostPath(homeDir), append(encoded, '\n'), 0o644)
 	return err
 }
 

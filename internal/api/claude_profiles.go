@@ -34,6 +34,8 @@ type claudeProfileSaveParams struct {
 	Profile claudeprofile.Profile `json:"profile"`
 	// Replaces is the profile's previous name when it is renamed.
 	Replaces string `json:"replaces"`
+	// Host is passed on when saving the applied profile applies it again.
+	Host string `json:"host"`
 }
 
 // saveClaudeProfile adds or replaces a profile. Saving the applied profile applies it again.
@@ -68,7 +70,7 @@ func saveClaudeProfile(ctx context.Context, env *env, params claudeProfileSavePa
 		return nil, err
 	}
 	if wasActive {
-		return applyClaudeProfile(ctx, env, claudeProfileApplyParams{Name: &params.Profile.Name})
+		return applyClaudeProfile(ctx, env, claudeProfileApplyParams{Name: &params.Profile.Name, Host: params.Host})
 	}
 	return claudeProfilesView(store), nil
 }
@@ -96,6 +98,9 @@ func deleteClaudeProfile(_ context.Context, env *env, params claudeProfileDelete
 type claudeProfileApplyParams struct {
 	// Name is the profile to apply; null applies none, restoring Claude Code's own slots.
 	Name *string `json:"name"`
+	// Host names the app that applies the profile to the Claude Code it launches through
+	// a proxy (see claudeprofile.Store.Host); empty applies it to Claude Code's settings.
+	Host string `json:"host"`
 }
 
 // applyClaudeProfile points Claude Code's model slots at the profile's models, sets its
@@ -118,7 +123,23 @@ func applyClaudeProfile(ctx context.Context, env *env, params claudeProfileApply
 	} else {
 		store.Active = ""
 	}
-	if err := claudeprofile.ApplyEnv(env.deps.HomeDir, &store, profile); err != nil {
+	store.Host = params.Host
+	switch {
+	case store.Host == "":
+		if err := claudeprofile.ApplyEnv(env.deps.HomeDir, &store, profile); err != nil {
+			return nil, err
+		}
+	case store.OriginalEnv != nil:
+		// A profile applied to Claude Code's settings before its host took over: put them back.
+		if err := claudeprofile.ApplyEnv(env.deps.HomeDir, &store, nil); err != nil {
+			return nil, err
+		}
+	}
+	hostProfile := profile
+	if store.Host == "" {
+		hostProfile = nil
+	}
+	if err := claudeprofile.WriteHostSetup(env.deps.HomeDir, hostProfile); err != nil {
 		return nil, err
 	}
 	if err := claudeprofile.Save(env.deps.HomeDir, store); err != nil {

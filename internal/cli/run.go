@@ -1106,7 +1106,8 @@ func (s agentRoutingGuidanceStep) Run() error {
 		options.ClaudePhaseAssignments = s.claudePhases
 		options.ClaudeModelAssignments = s.claudeLegacy
 		if profiles, err := claudeprofile.Load(s.homeDir); err == nil {
-			if active, ok := profiles.ActiveProfile(); ok {
+			// A host applies the guide to the Claude Code it launches through a proxy instead.
+			if active, ok := profiles.ActiveProfile(); ok && profiles.Host == "" {
 				options.ClaudeSlotGuide = claudeprofile.Guide(active)
 			}
 		}
