@@ -524,6 +524,29 @@ func TestAppendPiPackageKeepsSubagentsPackageWhileGentlePiIsPinnedBelowGentleAge
 	}
 }
 
+// pi install and pi-engram init both declare gentle-engram; Pi must load it once.
+func TestAppendPiPackageKeepsOneEntryPerNPMPackage(t *testing.T) {
+	got := appendPiPackage([]any{
+		"git:github.com/example/gentle-shell",
+		"npm:gentle-engram",
+		"npm:@upstash/context7-pi",
+		"npm:gentle-engram@0.1.16",
+		"npm:@upstash/context7-pi@0.1.2",
+		"npm:pi-btw@0.6.1",
+		"npm:pi-btw@0.6.1",
+	}, "npm:pi-mcp-adapter")
+	want := []any{
+		"git:github.com/example/gentle-shell",
+		"npm:gentle-engram",
+		"npm:@upstash/context7-pi",
+		"npm:pi-btw@0.6.1",
+		"npm:pi-mcp-adapter",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("appendPiPackage() = %v, want %v", got, want)
+	}
+}
+
 func TestMergePiSettingsFileRemovesRetiredCompanionPackages(t *testing.T) {
 	home := t.TempDir()
 	settingsPath := filepath.Join(home, ".pi", "agent", "settings.json")

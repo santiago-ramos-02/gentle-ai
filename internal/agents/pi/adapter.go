@@ -498,15 +498,53 @@ func appendPiPackage(existing any, desired string) []any {
 	packages := piPackagesAsSlice(existing)
 	filtered := make([]any, 0, len(packages)+1)
 	keepSubagents := !gentlePiShipsSubagents(packages)
+	// pi install declares npm:gentle-engram and pi-engram init declares it again pinned, as
+	// npm:gentle-engram@<version>; Pi then loads the package twice. Keep one entry per npm
+	// package, preferring the unpinned one so pi update keeps it current.
+	unpinned := map[string]bool{}
+	for _, pkg := range packages {
+		if name, pinned := piNPMPackageName(pkg); name != "" && !pinned {
+			unpinned[name] = true
+		}
+	}
+	seen := map[string]bool{}
 	for _, pkg := range packages {
 		identity := piPackageIdentity(pkg)
 		retired := isRetiredPiPackage(identity) && !(keepSubagents && identity == "npm:pi-subagents-j0k3r")
 		if identity == piMCPAdapterPackage || isLegacyPiSubagentPackage(identity) || retired {
 			continue
 		}
+		if name, pinned := piNPMPackageName(pkg); name != "" {
+			if seen[name] || (pinned && unpinned[name]) {
+				continue
+			}
+			seen[name] = true
+		}
 		filtered = append(filtered, pkg)
 	}
 	return append(filtered, desired)
+}
+
+// piNPMPackageName is the npm package a Pi package source names, and whether the source pins
+// a version; an empty name for sources that are not npm packages.
+func piNPMPackageName(pkg any) (string, bool) {
+	source, ok := pkg.(string)
+	if !ok {
+		object, isObject := pkg.(map[string]any)
+		if !isObject {
+			return "", false
+		}
+		source, _ = object["source"].(string)
+	}
+	name, isNPM := strings.CutPrefix(source, "npm:")
+	if !isNPM || name == "" {
+		return "", false
+	}
+	// A scoped name starts with @, so a version separator is an @ after the first character.
+	if at := strings.LastIndex(name, "@"); at > 0 {
+		return name[:at], true
+	}
+	return name, false
 }
 
 func piPackagesAsSlice(existing any) []any {
