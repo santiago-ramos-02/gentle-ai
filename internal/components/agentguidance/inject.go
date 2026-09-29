@@ -69,6 +69,8 @@ type RoutingOptions struct {
 	CodexPhaseModelAssignments  map[string]string
 	CodexModelAssignments       map[string]model.CodexEffort
 	CodexCarrilModelAssignments map[string]string
+	ClaudePhaseAssignments      map[string]model.ClaudePhaseAssignment
+	ClaudeModelAssignments      map[string]model.ClaudeModelAlias
 }
 
 // InjectRoutingWithOptions installs the organic routing guidance for one
@@ -105,6 +107,9 @@ func InjectRoutingWithOptions(targetDir string, agent model.AgentID, options Rou
 	if agent == model.AgentCodex {
 		rendered += "\n\n### Codex ODD worker assignments\n\nUse the exact model and reasoning_effort for the selected worker class when calling `spawn_agent`; set `fork_turns: \"none\"` for overrides. These assignments apply to ODD delegation, not native RDD review.\n\n" +
 			model.RenderCodexODDAssignments(options.CodexPhaseModelAssignments, options.CodexModelAssignments, options.CodexCarrilModelAssignments)
+	}
+	if agent == model.AgentClaudeCode {
+		rendered += renderClaudeODDAssignments(options.ClaudePhaseAssignments, options.ClaudeModelAssignments)
 	}
 
 	delivery, err := resolveRoutingDelivery(targetDir, agent, options)

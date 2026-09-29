@@ -47,8 +47,10 @@ type Deps struct {
 	Doctor       func(ctx context.Context, homeDir string) doctor.Report
 	CheckUpdates func(ctx context.Context, version string, profile system.PlatformProfile, tools []string) []update.UpdateResult
 
-	Sync            func(homeDir string, overrides *model.SyncOverrides) (service.SyncResult, error)
-	CodexModels     func(ctx context.Context) []string
+	Sync        func(homeDir string, overrides *model.SyncOverrides) (service.SyncResult, error)
+	CodexModels func(ctx context.Context) []string
+	// ClaudeModels lists the models of the proxy Claude Code is pointed at, if any.
+	ClaudeModels    func(ctx context.Context, homeDir string) []string
 	OpenCodeCatalog func(ctx context.Context, projectDir string) (map[string]opencode.Provider, error)
 
 	Install             func(homeDir string, request service.InstallRequest, onProgress pipeline.ProgressFunc) pipeline.ExecutionResult
@@ -86,6 +88,7 @@ func DefaultDeps(version, homeDir string) Deps {
 		CheckUpdates:        update.CheckFiltered,
 		Sync:                service.Sync,
 		CodexModels:         model.DiscoverCodexModels,
+		ClaudeModels:        discoverClaudeProxyModels,
 		OpenCodeCatalog:     opencode.DiscoverCatalog,
 		Install:             service.Install,
 		SetGlobalReviewMode: cli.SetGlobalReviewMode,

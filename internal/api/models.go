@@ -445,6 +445,14 @@ func getModels(ctx context.Context, env *env, params modelsGetParams) (any, erro
 		for _, alias := range model.ClaudeModelAliases() {
 			options.Models = append(options.Models, claudeModelOption{ID: string(alias), Label: string(alias), Efforts: strs(model.ClaudeEffortsForModel(alias))})
 		}
+		// Behind a proxy, Claude Code reaches whatever models the proxy serves.
+		if params.Discover && env.deps.ClaudeModels != nil {
+			for _, id := range env.deps.ClaudeModels(ctx, env.deps.HomeDir) {
+				if custom := model.ClaudeCustomModel(id); custom.Valid() {
+					options.Models = append(options.Models, claudeModelOption{ID: string(custom), Label: id, Efforts: strs(model.ClaudeEffortsForModel(custom))})
+				}
+			}
+		}
 		result.Options.Claude = options
 	case model.AgentKiroIDE:
 		result.Presets = presetOptions(model.KiroModelPresets())

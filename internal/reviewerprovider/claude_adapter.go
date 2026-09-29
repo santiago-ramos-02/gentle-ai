@@ -64,7 +64,7 @@ func (adapter *ClaudeAdapter) Review(ctx context.Context, invocation Invocation)
 	}
 	arguments := append([]string(nil), claudeReviewerArguments...)
 	if adapter.Model.Valid() {
-		arguments = append(arguments, "--model", adapter.Model.String())
+		arguments = append(arguments, "--model", adapter.Model.ModelID())
 	}
 	command := commandContext(ctx, binary, arguments...)
 	command.Dir = scratch

@@ -39,7 +39,8 @@ func (a ClaudeModelAlias) Valid() bool {
 	case ClaudeModelFable, ClaudeModelOpus, ClaudeModelSonnet, ClaudeModelHaiku:
 		return true
 	default:
-		return false
+		_, custom := a.customModelID()
+		return custom
 	}
 }
 
@@ -78,6 +79,9 @@ func ClaudeEffortsForModel(alias ClaudeModelAlias) []ClaudeEffort {
 	case ClaudeModelHaiku:
 		return []ClaudeEffort{ClaudeEffortDefault}
 	default:
+		if _, custom := alias.customModelID(); custom {
+			return append([]ClaudeEffort(nil), claudeCustomEfforts...)
+		}
 		return []ClaudeEffort{ClaudeEffortDefault}
 	}
 }

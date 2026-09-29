@@ -227,7 +227,7 @@ func (a *Adapter) EmbeddedSubAgentsDir() string {
 // alias.String(). Implemented as a method so the SDD injector's
 // claudeModelResolver type assertion fires for this adapter.
 func (a *Adapter) ClaudeModelID(alias model.ClaudeModelAlias) string {
-	return alias.String()
+	return alias.ModelID()
 }
 
 func defaultStat(path string) statResult {
