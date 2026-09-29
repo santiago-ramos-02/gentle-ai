@@ -1112,6 +1112,13 @@ func (s agentRoutingGuidanceStep) Run() error {
 
 	s.recordChanged(stripped)
 	s.recordChanged(injected)
+	if s.agent == model.AgentClaudeCode {
+		files, err := agentguidance.SyncClaudeODDAgents(adapter.SubAgentsDir(targetDir), s.claudePhases, s.claudeLegacy)
+		if err != nil {
+			return fmt.Errorf("write Claude Code ODD worker agents: %w", err)
+		}
+		s.recordChanged(agentguidance.Result{Changed: len(files) > 0, Files: files})
+	}
 	strict, err := agentguidance.InjectStrictTDDWithOptions(targetDir, s.agent, false, options)
 	if err != nil {
 		return fmt.Errorf("retire legacy strict TDD guidance for %q: %w", s.agent, err)

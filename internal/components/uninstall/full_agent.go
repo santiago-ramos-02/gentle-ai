@@ -5,7 +5,9 @@ import (
 	"path/filepath"
 
 	"github.com/gentleman-programming/gentle-ai/v4/internal/agents"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/components/agentguidance"
 	"github.com/gentleman-programming/gentle-ai/v4/internal/components/reviewassets"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/model"
 )
 
 // agentOnlySections are the instruction sections Gentle AI writes for an agent
@@ -37,7 +39,31 @@ func fullAgentOperations(adapter agents.Adapter, homeDir string) ([]operation, [
 			ops = append(ops, removeOwnedNativeAgent(adapter, path))
 		}
 	}
+	if adapter.Agent() == model.AgentClaudeCode {
+		for _, path := range agentguidance.ClaudeODDAgentPaths(adapter.SubAgentsDir(homeDir)) {
+			targets = append(targets, path)
+			ops = append(ops, removeOwnedClaudeODDAgent(path))
+		}
+	}
 	return ops, targets
+}
+
+// removeOwnedClaudeODDAgent removes an ODD worker agent only while it is one Gentle AI wrote.
+func removeOwnedClaudeODDAgent(path string) operation {
+	return operation{
+		typeID: opRemoveFile,
+		path:   path,
+		apply: func(path string) (bool, bool, error) {
+			owned, err := agentguidance.ClaudeODDAgentOwned(path)
+			if err != nil || !owned {
+				return false, false, err
+			}
+			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+				return false, false, err
+			}
+			return true, true, nil
+		},
+	}
 }
 
 // removeOwnedNativeAgent removes a native agent file only while it still holds
