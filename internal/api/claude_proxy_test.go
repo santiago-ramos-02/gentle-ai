@@ -18,7 +18,7 @@ func TestClaudeModelsIncludeTheProxysModels(t *testing.T) {
 			return
 		}
 		authorization = r.Header.Get("Authorization")
-		_, _ = w.Write([]byte(`{"data":[{"id":"gpt-5.6-sol"},{"id":"claude-opus-5-5"},{"id":"gpt-5.6-sol"}]}`))
+		_, _ = w.Write([]byte(`{"data":[{"id":"claude-fable-5-dd-los-6.5-tpg","display_name":"GPT 5.6 Sol"},{"id":"claude-opus-5-5"},{"id":"claude-fable-5-dd-los-6.5-tpg"}]}`))
 	}))
 	defer server.Close()
 
@@ -43,10 +43,11 @@ func TestClaudeModelsIncludeTheProxysModels(t *testing.T) {
 	for _, option := range proxied.Options.Claude.Models {
 		ids = append(ids, option.ID)
 	}
-	if !slices.Equal(ids, []string{"fable", "opus", "sonnet", "haiku", "custom:claude-opus-5-5", "custom:gpt-5.6-sol"}) {
+	if !slices.Equal(ids, []string{"fable", "opus", "sonnet", "haiku", "custom:claude-opus-5-5", "custom:claude-fable-5-dd-los-6.5-tpg"}) {
 		t.Fatalf("proxied Claude models = %v", ids)
 	}
-	if last := proxied.Options.Claude.Models[5]; last.Label != "gpt-5.6-sol" || len(last.Efforts) != 6 {
+	// The proxy's own name labels a model it gives a Claude-shaped ID.
+	if last := proxied.Options.Claude.Models[5]; last.Label != "GPT 5.6 Sol" || len(last.Efforts) != 6 {
 		t.Fatalf("custom option = %+v", last)
 	}
 	if authorization != "Bearer proxy-key" {

@@ -447,9 +447,9 @@ func getModels(ctx context.Context, env *env, params modelsGetParams) (any, erro
 		}
 		// Behind a proxy, Claude Code reaches whatever models the proxy serves.
 		if params.Discover && env.deps.ClaudeModels != nil {
-			for _, id := range env.deps.ClaudeModels(ctx, env.deps.HomeDir) {
-				if custom := model.ClaudeCustomModel(id); custom.Valid() {
-					options.Models = append(options.Models, claudeModelOption{ID: string(custom), Label: id, Efforts: strs(model.ClaudeEffortsForModel(custom))})
+			for _, proxied := range env.deps.ClaudeModels(ctx, env.deps.HomeDir) {
+				if custom := model.ClaudeCustomModel(proxied.ID); custom.Valid() {
+					options.Models = append(options.Models, claudeModelOption{ID: string(custom), Label: proxied.Label, Efforts: strs(model.ClaudeEffortsForModel(custom))})
 				}
 			}
 		}
