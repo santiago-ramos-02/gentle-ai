@@ -71,6 +71,8 @@ type RoutingOptions struct {
 	CodexCarrilModelAssignments map[string]string
 	ClaudePhaseAssignments      map[string]model.ClaudePhaseAssignment
 	ClaudeModelAssignments      map[string]model.ClaudeModelAlias
+	// ClaudeSlotGuide says what each Claude Code model slot runs under the applied profile.
+	ClaudeSlotGuide string
 }
 
 // InjectRoutingWithOptions installs the organic routing guidance for one
@@ -109,7 +111,7 @@ func InjectRoutingWithOptions(targetDir string, agent model.AgentID, options Rou
 			model.RenderCodexODDAssignments(options.CodexPhaseModelAssignments, options.CodexModelAssignments, options.CodexCarrilModelAssignments)
 	}
 	if agent == model.AgentClaudeCode {
-		rendered += renderClaudeODDAssignments(options.ClaudePhaseAssignments, options.ClaudeModelAssignments)
+		rendered += renderClaudeODDAssignments(options.ClaudePhaseAssignments, options.ClaudeModelAssignments) + options.ClaudeSlotGuide
 	}
 
 	delivery, err := resolveRoutingDelivery(targetDir, agent, options)

@@ -23,6 +23,7 @@ import (
 	piagent "github.com/gentleman-programming/gentle-ai/v4/internal/agents/pi"
 	"github.com/gentleman-programming/gentle-ai/v4/internal/assets"
 	"github.com/gentleman-programming/gentle-ai/v4/internal/backup"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/claudeprofile"
 	"github.com/gentleman-programming/gentle-ai/v4/internal/components/agentguidance"
 	"github.com/gentleman-programming/gentle-ai/v4/internal/components/agenthooks"
 	"github.com/gentleman-programming/gentle-ai/v4/internal/components/communitytool"
@@ -1104,6 +1105,11 @@ func (s agentRoutingGuidanceStep) Run() error {
 	if s.agent == model.AgentClaudeCode {
 		options.ClaudePhaseAssignments = s.claudePhases
 		options.ClaudeModelAssignments = s.claudeLegacy
+		if profiles, err := claudeprofile.Load(s.homeDir); err == nil {
+			if active, ok := profiles.ActiveProfile(); ok {
+				options.ClaudeSlotGuide = claudeprofile.Guide(active)
+			}
+		}
 	}
 	injected, err := agentguidance.InjectRoutingWithOptions(targetDir, s.agent, options)
 	if err != nil {

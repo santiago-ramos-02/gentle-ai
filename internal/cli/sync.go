@@ -526,6 +526,8 @@ func (r *syncRuntime) stagePlan() pipeline.StagePlan {
 			codexPhaseModels: r.selection.CodexPhaseModelAssignments,
 			codexEfforts:     r.selection.CodexModelAssignments,
 			codexCarrils:     r.selection.CodexCarrilModelAssignments,
+			claudePhases:     r.selection.ClaudePhaseAssignments,
+			claudeLegacy:     r.selection.ClaudeModelAssignments,
 			backgroundPolicy: r.backgroundPolicy,
 			legacySDD:        false,
 			id:               "sync:agent-guidance:" + string(agent),

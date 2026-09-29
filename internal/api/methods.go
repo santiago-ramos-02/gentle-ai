@@ -43,6 +43,10 @@ func methods() []method {
 		{name: "doctor", run: typed(runDoctor)},
 		{name: "footprint", run: typed(footprint)},
 		{name: "odd.features", run: typed(oddFeatures)},
+		{name: "claude.profiles", run: typed(getClaudeProfiles)},
+		{name: "claude.profiles.save", run: typed(saveClaudeProfile)},
+		{name: "claude.profiles.delete", run: typed(deleteClaudeProfile)},
+		{name: "claude.profiles.apply", run: typed(applyClaudeProfile)},
 	}
 }
 
