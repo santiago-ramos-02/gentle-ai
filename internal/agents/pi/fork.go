@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gentleman-programming/gentle-ai/v3/internal/components/filemerge"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/components/filemerge"
 )
 
 // gentlePiSource is the gentle-pi package Pi setup installs. The T3 fork's release
 // workflow points it at the fork's own gentle-pi, which carries the API T3 Code uses:
 //
-//	-X github.com/gentleman-programming/gentle-ai/v3/internal/agents/pi.gentlePiSource=git:github.com/<owner>/gentle-shell
+//	-X github.com/gentleman-programming/gentle-ai/v4/internal/agents/pi.gentlePiSource=git:github.com/<owner>/gentle-shell
 var gentlePiSource = "npm:gentle-pi"
 
 // isGentlePiDeclaration reports whether a Pi package source is some gentle-pi:

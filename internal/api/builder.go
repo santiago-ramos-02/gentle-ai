@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gentleman-programming/gentle-ai/v3/internal/agentbuilder"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/catalog"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/model"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/service"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/agentbuilder"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/catalog"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/model"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/service"
 )
 
 type builderEngine struct {

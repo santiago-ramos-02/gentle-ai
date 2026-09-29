@@ -10,14 +10,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gentleman-programming/gentle-ai/v3/internal/model"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/pipeline"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/reviewtransaction"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/service"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/state"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/system"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/update"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/update/upgrade"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/model"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/pipeline"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/reviewtransaction"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/service"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/state"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/system"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/update"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/update/upgrade"
 )
 
 // fakeInstall records the install request and reports two steps.

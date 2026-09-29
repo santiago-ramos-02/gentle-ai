@@ -3,8 +3,8 @@ package api
 import (
 	"strings"
 
-	"github.com/gentleman-programming/gentle-ai/v3/internal/catalog"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/model"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/catalog"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/model"
 )
 
 // stepLabel names a pipeline step for people, such as "Set up Claude Code"

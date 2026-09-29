@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/gentleman-programming/gentle-ai/v3/internal/api"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/api"
 )
 
 // runAPI serves `gentle-ai api <method>`. It never self-updates, prompts, or

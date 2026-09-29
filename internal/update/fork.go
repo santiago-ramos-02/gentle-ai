@@ -12,7 +12,7 @@ const InstallForkRelease InstallMethod = "fork-release"
 // forkRepository is the "owner/repo" whose releases a fork build updates from. The
 // fork's release workflow sets it:
 //
-//	-X github.com/gentleman-programming/gentle-ai/v3/internal/update.forkRepository=owner/repo
+//	-X github.com/gentleman-programming/gentle-ai/v4/internal/update.forkRepository=owner/repo
 //
 // Fork builds made anywhere else leave it empty and never update themselves.
 var forkRepository = ""

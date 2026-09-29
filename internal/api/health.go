@@ -3,10 +3,10 @@ package api
 import (
 	"context"
 
-	"github.com/gentleman-programming/gentle-ai/v3/internal/cli"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/doctor"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/system"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/update"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/cli"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/doctor"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/system"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/update"
 )
 
 type doctorCheck struct {

@@ -6,12 +6,12 @@ package service
 import (
 	"strings"
 
-	"github.com/gentleman-programming/gentle-ai/v3/internal/agentbuilder"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/cli"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/components/skills"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/model"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/planner"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/system"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/agentbuilder"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/cli"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/components/skills"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/model"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/planner"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/system"
 )
 
 // InstallQuestion names an optional choice the installer asks for a selection.

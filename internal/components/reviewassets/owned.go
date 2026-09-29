@@ -3,7 +3,7 @@ package reviewassets
 import (
 	"path/filepath"
 
-	"github.com/gentleman-programming/gentle-ai/v3/internal/model"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/model"
 )
 
 // NativeAgentOwned reports whether the native agent file at path is still

@@ -15,8 +15,8 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/gentleman-programming/gentle-ai/v3/internal/system"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/update"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/system"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/update"
 )
 
 const forkTestVersion = "3.7.0-t3.bbbbbbb"

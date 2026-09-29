@@ -5,13 +5,13 @@ import (
 	"context"
 	"slices"
 
-	"github.com/gentleman-programming/gentle-ai/v3/internal/backup"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/components/communitytool"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/components/opencodeplugin"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/model"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/pipeline"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/service"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/state"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/backup"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/components/communitytool"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/components/opencodeplugin"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/model"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/pipeline"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/service"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/state"
 )
 
 type installParams struct {

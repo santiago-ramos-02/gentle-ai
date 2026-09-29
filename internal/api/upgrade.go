@@ -4,10 +4,10 @@ import (
 	"context"
 	"strings"
 
-	"github.com/gentleman-programming/gentle-ai/v3/internal/cli"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/service"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/update"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/update/upgrade"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/cli"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/service"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/update"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/update/upgrade"
 )
 
 type upgradeParams struct {

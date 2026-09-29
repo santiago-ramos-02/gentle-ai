@@ -4,8 +4,8 @@ import (
 	"errors"
 	"os"
 
-	"github.com/gentleman-programming/gentle-ai/v3/internal/state"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/statecoord"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/state"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/statecoord"
 )
 
 // MarkPendingSync records that the next gentle-ai launch must sync, after a

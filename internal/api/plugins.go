@@ -4,9 +4,9 @@ import (
 	"context"
 	"slices"
 
-	"github.com/gentleman-programming/gentle-ai/v3/internal/components/opencodeplugin"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/model"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/service"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/components/opencodeplugin"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/model"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/service"
 )
 
 type pluginInfo struct {

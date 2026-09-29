@@ -9,11 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gentleman-programming/gentle-ai/v3/internal/agentbuilder"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/components/communitytool"
-	componentuninstall "github.com/gentleman-programming/gentle-ai/v3/internal/components/uninstall"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/model"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/state"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/agentbuilder"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/components/communitytool"
+	componentuninstall "github.com/gentleman-programming/gentle-ai/v4/internal/components/uninstall"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/model"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/state"
 )
 
 func TestToolsInstallStreamsOutputAndRecordsTheTools(t *testing.T) {

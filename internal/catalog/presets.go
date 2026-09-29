@@ -1,6 +1,6 @@
 package catalog
 
-import "github.com/gentleman-programming/gentle-ai/v3/internal/model"
+import "github.com/gentleman-programming/gentle-ai/v4/internal/model"
 
 // Preset is an installer preset in the order the installer offers it.
 type Preset struct {

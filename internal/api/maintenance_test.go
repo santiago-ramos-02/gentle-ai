@@ -10,15 +10,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gentleman-programming/gentle-ai/v3/internal/backup"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/cli"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/components/opencodeplugin"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/doctor"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/model"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/reviewtransaction"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/state"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/system"
-	"github.com/gentleman-programming/gentle-ai/v3/internal/update"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/backup"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/cli"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/components/opencodeplugin"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/doctor"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/model"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/reviewtransaction"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/state"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/system"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/update"
 )
 
 func writeBackup(t *testing.T, home, id string, createdAt time.Time, pinned bool) backup.Manifest {
