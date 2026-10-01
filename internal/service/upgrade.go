@@ -22,3 +22,22 @@ func MarkPendingSync(homeDir string) error {
 		return state.Write(homeDir, s)
 	})
 }
+
+// ClearPendingSync records that a sync of every agent has run since the last upgrade, as the
+// TUI's deferred sync does on launch. Nothing is written when the flag is already clear.
+func ClearPendingSync(homeDir string) error {
+	return statecoord.WithLock(homeDir, func() error {
+		s, err := state.Read(homeDir)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return nil
+			}
+			return err
+		}
+		if !s.PendingSync {
+			return nil
+		}
+		s.PendingSync = false
+		return state.Write(homeDir, s)
+	})
+}

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"maps"
 	"path/filepath"
 	"slices"
@@ -22,6 +23,49 @@ func recordSync(deps *Deps) *[]*model.SyncOverrides {
 		return service.SyncResult{Files: []string{"/changed"}}, nil
 	}
 	return calls
+}
+
+// A full sync brings every agent up to date, so it clears the post-upgrade flag the TUI
+// otherwise clears on its next launch; a sync of some agents, or a failed one, leaves it.
+func TestSyncClearsPendingSyncOnlyAfterAFullSync(t *testing.T) {
+	deps := testDeps(t)
+	recordSync(&deps)
+	pending := func() bool {
+		t.Helper()
+		current, err := state.Read(deps.HomeDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return current.PendingSync
+	}
+	if err := state.Write(deps.HomeDir, state.InstallState{
+		InstalledAgents: []string{string(model.AgentClaudeCode), string(model.AgentCodex)},
+		PendingSync:     true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	result[syncResult](t, deps, "sync", `{"agents":["codex"]}`)
+	if !pending() {
+		t.Fatal("a sync of some agents cleared pendingSync")
+	}
+
+	deps.Sync = func(string, *model.SyncOverrides) (service.SyncResult, error) {
+		return service.SyncResult{}, errors.New("disk full")
+	}
+	failure(t, deps, []string{"sync"}, "", CodeFailed)
+	if !pending() {
+		t.Fatal("a failed sync cleared pendingSync")
+	}
+
+	recordSync(&deps)
+	result[syncResult](t, deps, "sync", "")
+	if pending() {
+		t.Fatal("a full sync left pendingSync set")
+	}
+	if got := result[statusResult](t, deps, "status", ""); got.State.SyncNeeded {
+		t.Fatal("status still reports a sync is needed")
+	}
 }
 
 func TestSyncKeepsAbsentAndEmptyDistinct(t *testing.T) {

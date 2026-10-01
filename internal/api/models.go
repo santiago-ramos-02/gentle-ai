@@ -161,7 +161,17 @@ func runSync(_ context.Context, env *env, params syncParams) (any, error) {
 		}
 		overrides.TargetAgents = agents
 	}
-	return syncWith(env, overrides)
+	result, err := syncWith(env, overrides)
+	if err != nil {
+		return nil, err
+	}
+	// Every agent is now current, so the sync an upgrade asked for has happened.
+	if len(agents) == 0 {
+		if err := service.ClearPendingSync(env.deps.HomeDir); err != nil {
+			return nil, errorf(CodeFailed, "sync: record that agents are current: %v", err)
+		}
+	}
+	return result, nil
 }
 
 func syncWith(env *env, overrides *model.SyncOverrides) (syncResult, error) {
