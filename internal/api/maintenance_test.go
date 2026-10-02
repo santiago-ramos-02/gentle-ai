@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -90,10 +91,10 @@ func detectOpenCode(deps *Deps) {
 	}
 }
 
-func TestPluginsRequireOpenCodeAndReportInstalled(t *testing.T) {
+func TestRetiredOpenCodePluginsAreListedOnlyForRemoval(t *testing.T) {
 	deps := testDeps(t)
 	listed := result[pluginsResult](t, deps, "plugins.list", "")
-	if listed.Supported || listed.Reason == "" || len(listed.Plugins) == 0 || listed.Plugins[0].Installed {
+	if listed.Supported || listed.Reason == "" || len(listed.Plugins) != 0 {
 		t.Fatalf("plugins without OpenCode = %+v", listed)
 	}
 	failure(t, deps, []string{"plugins.install"}, `{"ids":["sub-agent-statusline"]}`, CodeUnsupported)
@@ -101,24 +102,34 @@ func TestPluginsRequireOpenCodeAndReportInstalled(t *testing.T) {
 	failure(t, deps, []string{"plugins.install"}, `{"ids":[]}`, CodeInvalidParams)
 
 	detectOpenCode(&deps)
-	var installed []model.OpenCodeCommunityPluginID
-	deps.InstallPlugins = func(home string, ids []model.OpenCodeCommunityPluginID) ([]opencodeplugin.Result, error) {
-		installed = ids
-		return []opencodeplugin.Result{{Changed: true, Files: []string{home + "/.config/opencode/tui.json"}}}, nil
+	deps.InstallPlugins = func(_ string, _ []model.OpenCodeCommunityPluginID) ([]opencodeplugin.Result, error) {
+		t.Fatal("retired OpenCode plugins reached the installer")
+		return nil, nil
 	}
-	got := result[pluginsInstallResult](t, deps, "plugins.install", `{"ids":["sub-agent-statusline"]}`)
-	if !slices.Equal(installed, []model.OpenCodeCommunityPluginID{model.OpenCodePluginSubAgentStatusline}) || len(got.Results) != 1 || !got.Results[0].Changed || got.Results[0].ID != "sub-agent-statusline" {
-		t.Fatalf("install = %+v", got)
+	listed = result[pluginsResult](t, deps, "plugins.list", "")
+	if !listed.Supported || len(listed.Plugins) != 0 {
+		t.Fatalf("retired plugin catalog = %+v", listed)
 	}
 
 	// tui.json registers the statusline package and the logo; the retired
 	// SDD manager is listed too so it can still be removed.
-	if err := writeFile(filepath.Join(deps.HomeDir, ".config", "opencode", "tui.json"), `{"plugin":["opencode-subagent-statusline","opencode-sdd-engram-manage","/x/tui-plugins/gentle-logo.tsx"]}`); err != nil {
+	configPath := filepath.Join(deps.HomeDir, ".config", "opencode", "tui.json")
+	config := `{"plugin":["opencode-subagent-statusline","opencode-sdd-engram-manage","/x/tui-plugins/gentle-logo.tsx"]}`
+	if err := writeFile(configPath, config); err != nil {
 		t.Fatal(err)
 	}
 	listed = result[pluginsResult](t, deps, "plugins.list", "")
 	if !listed.Supported || !listed.Plugins[0].Installed || len(listed.Plugins) != 3 {
 		t.Fatalf("plugins = %+v", listed)
+	}
+	for _, id := range []model.OpenCodeCommunityPluginID{model.OpenCodePluginSubAgentStatusline, model.OpenCodePluginSDDEngramManage, model.OpenCodePluginGentleLogo} {
+		message := failure(t, deps, []string{"plugins.install"}, fmt.Sprintf(`{"ids":[%q]}`, id), CodeUnsupported)
+		if !strings.Contains(message, "no longer offered") {
+			t.Fatalf("retirement message = %q", message)
+		}
+	}
+	if data, err := os.ReadFile(configPath); err != nil || string(data) != config {
+		t.Fatalf("retired plugin operations changed existing configuration: %q, %v", data, err)
 	}
 
 	failure(t, deps, []string{"plugins.uninstall"}, `{"id":"not-installed"}`, CodeNotFound)

@@ -7,7 +7,6 @@ import (
 
 	"github.com/gentleman-programming/gentle-ai/v4/internal/backup"
 	"github.com/gentleman-programming/gentle-ai/v4/internal/components/communitytool"
-	"github.com/gentleman-programming/gentle-ai/v4/internal/components/opencodeplugin"
 	"github.com/gentleman-programming/gentle-ai/v4/internal/components/piplugin"
 	"github.com/gentleman-programming/gentle-ai/v4/internal/model"
 	"github.com/gentleman-programming/gentle-ai/v4/internal/pipeline"
@@ -55,6 +54,9 @@ func install(ctx context.Context, env *env, params installParams) (any, error) {
 	if params.Selection == nil {
 		return nil, invalidParams("selection is required")
 	}
+	if len(params.OpenCodePlugins) > 0 {
+		return nil, invalidParams("%s", openCodePluginsRetiredReason)
+	}
 	if params.Cwd != "" {
 		if err := requireCwd(params.Cwd); err != nil {
 			return nil, err
@@ -86,12 +88,6 @@ func install(ctx context.Context, env *env, params installParams) (any, error) {
 	}
 	if len(selection.CommunityTools) > 0 && !service.AsksCommunityTools(selection) {
 		return nil, invalidParams("communityTools are not offered for this selection")
-	}
-	if selection.OpenCodePlugins, err = openCodePluginIDs(params.OpenCodePlugins); err != nil {
-		return nil, err
-	}
-	if len(selection.OpenCodePlugins) > 0 && !service.AsksOpenCodePlugins(selection) {
-		return nil, invalidParams("openCodePlugins need the opencode agent in the selection")
 	}
 	if selection.PiPlugins, err = piPluginIDs(params.PiPlugins); err != nil {
 		return nil, err
@@ -169,18 +165,6 @@ func communityToolIDs(raw []string) ([]model.CommunityToolID, error) {
 		id := model.CommunityToolID(value)
 		if _, ok := communitytool.DefinitionFor(id); !ok {
 			return nil, invalidParams("unknown community tool %q", value)
-		}
-		ids = append(ids, id)
-	}
-	return ids, nil
-}
-
-func openCodePluginIDs(raw []string) ([]model.OpenCodeCommunityPluginID, error) {
-	ids := make([]model.OpenCodeCommunityPluginID, 0, len(raw))
-	for _, value := range raw {
-		id := model.OpenCodeCommunityPluginID(value)
-		if !slices.ContainsFunc(opencodeplugin.Definitions(), func(def opencodeplugin.Definition) bool { return def.ID == id }) {
-			return nil, invalidParams("unknown OpenCode plugin %q", value)
 		}
 		ids = append(ids, id)
 	}

@@ -57,7 +57,7 @@ Field names are camelCase. Lists and objects are never `null`; an optional value
 | `describe` | none | `version`, `apiVersion`, `methods` |
 | `status` | none | System, agents, components, presets, personas, skills, persisted `state`, `openCodeDetected`, `builderEngines` |
 | `plan` | `selection` | Resolved agents and components, pipeline `steps`, and the installer `questions` for that selection |
-| `install` | `selection`, `modelPresets`, `models`, `communityTools`, `openCodePlugins`, `rdd`, `background`, `cwd` | Progress events, then `steps`, `manualActions`, `backupId`, `rddMode` |
+| `install` | `selection`, `modelPresets`, `models`, `communityTools`, `piPlugins`, `rdd`, `background`, `cwd` | Progress events, then `steps`, `manualActions`, `backupId`, `rddMode` |
 | `sync` | `agents`, `models` | `files`, `manualActions` |
 | `updates` | `force` | `checked` and one entry per managed tool |
 | `upgrade` | `tools`, `backup`, `sync` | Log events, then `upgraded`, `failed`, `skipped`, `backupId`, `restartRequired`, `syncPending`, `files`. With `sync`, a sync follows, like the TUI's Upgrade + Sync |
@@ -67,9 +67,9 @@ Field names are camelCase. Lists and objects are never `null`; an optional value
 | `backups.restore`, `backups.delete` | `id` | `restoredFiles`, or `{}` |
 | `backups.rename` | `id`, `description` | `{}` |
 | `backups.pin` | `id`, `pinned` | `{}` |
-| `plugins.list` | none | OpenCode community `plugins`, `supported`, `reason` |
-| `plugins.install` | `ids` | Per-plugin `changed` and `files` |
-| `plugins.uninstall` | `id` | The layers the uninstall touched |
+| `plugins.list` | `agent` (optional; defaults to `opencode`) | Existing OpenCode registrations for removal, or available Pi packages: `plugins`, `supported`, `reason` |
+| `plugins.install` | `agent: "pi"`, `ids` | Per-plugin `changed` and `files`; OpenCode plugin installation returns `unsupported` |
+| `plugins.uninstall` | `agent` (optional), `id` | The layers the OpenCode uninstall touched, or Pi's removed `pluginId` |
 | `tools.list` | `cwd` (optional) | Community tools with CLI and per-agent status |
 | `tools.install` | `ids`, `cwd` | Log events, then per-tool `commandsRun` and `manualActions` |
 | `builder.engines` | none | Agent builder `engines` and whether each is available |
@@ -94,7 +94,7 @@ The TUI asks optional questions depending on the selection. `plan` returns them 
 | Question | Param |
 | --- | --- |
 | `communityTools` | `communityTools` (omit it to keep the recorded community tools; `tools.install` manages them too) |
-| `openCodePlugins` | `openCodePlugins` |
+| `piPlugins` | `piPlugins` |
 | `skills` | `selection.skills` (omit it to keep the picker's default: every skill) |
 | `rdd` | `rdd` (omit it to leave the global review mode unchanged) |
 | `openCodeBackground` | `background.opencode`: `on` or `off` |
@@ -119,5 +119,7 @@ The background questions appear only when the environment and your previous choi
 When `upgrade` updates gentle-ai itself, the running binary is stale and it reports `restartRequired`. With `sync`, it skips the sync, records it for the next launch, and also reports `syncPending`. Start a new `gentle-ai` process before calling anything else.
 
 ## Retired features
+
+OpenCode community plugin installation is retired. `plan` no longer asks for `openCodePlugins`, and `install` rejects a non-empty list. Existing registrations are preserved; `plugins.list` and `plugins.uninstall` still support removing them.
 
 SDD, its profiles, the strict TDD choice, and the agent builder's SDD integration were retired from Gentle AI, so the API has no parameters for them.

@@ -53,7 +53,6 @@ func TestInstallAnswersEveryInstallerQuestion(t *testing.T) {
 		"modelPresets": {"codex": "powerful", "claude-code": "economy"},
 		"models": {"kiroModelAssignments": {"odd-worker": "qwen"}},
 		"communityTools": ["codegraph"],
-		"openCodePlugins": ["sub-agent-statusline"],
 		"rdd": false,
 		"background": {"opencode": "on"}
 	}`)
@@ -74,7 +73,6 @@ func TestInstallAnswersEveryInstallerQuestion(t *testing.T) {
 		"modelPresets": {"codex": "powerful", "claude-code": "economy"},
 		"models": {"kiroModelAssignments": {"odd-worker": "qwen"}},
 		"communityTools": ["codegraph"],
-		"openCodePlugins": ["sub-agent-statusline"],
 		"background": {"opencode": "on"}
 	}`)
 	sel := request.Selection
@@ -84,11 +82,25 @@ func TestInstallAnswersEveryInstallerQuestion(t *testing.T) {
 		sel.CodexOrchestratorAssignment == nil || sel.CodexOrchestratorAssignment.Model != model.CodexPresetOrchestratorAssignment("powerful").Model {
 		t.Fatalf("model assignments = %+v", sel)
 	}
-	if !slices.Equal(sel.CommunityTools, []model.CommunityToolID{model.CommunityToolCodeGraph}) || !slices.Equal(sel.OpenCodePlugins, []model.OpenCodeCommunityPluginID{model.OpenCodePluginSubAgentStatusline}) {
-		t.Fatalf("optional setup = %+v %+v", sel.CommunityTools, sel.OpenCodePlugins)
+	if !slices.Equal(sel.CommunityTools, []model.CommunityToolID{model.CommunityToolCodeGraph}) {
+		t.Fatalf("optional setup = %+v", sel.CommunityTools)
 	}
 	if request.OpenCodeBackground != model.OpenCodeBackgroundOn || request.OpenCodeBackgroundPersist != model.OpenCodeBackgroundOn || !slices.Contains(request.Resolved.Agents, model.AgentCodex) || request.KeepCommunityTools {
 		t.Fatalf("request = %+v", request)
+	}
+}
+
+func TestInstallRejectsRetiredOpenCodePluginsBeforeInstalling(t *testing.T) {
+	for _, agent := range []string{"opencode", "claude-code"} {
+		t.Run(agent, func(t *testing.T) {
+			deps := testDeps(t)
+			request := fakeInstall(&deps, nil)
+			params := fmt.Sprintf(`{"selection":{"agents":[%q]},"openCodePlugins":["sub-agent-statusline"],"background":{"opencode":"off"}}`, agent)
+			message := failure(t, deps, []string{"install"}, params, CodeInvalidParams)
+			if !strings.Contains(message, "no longer offered") || len(request.Selection.Agents) != 0 {
+				t.Fatalf("retired plugin request reached installation: message %q, request %+v", message, request)
+			}
+		})
 	}
 }
 

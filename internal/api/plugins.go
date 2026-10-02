@@ -25,8 +25,9 @@ type pluginsResult struct {
 }
 
 const (
-	openCodeMissingReason = "OpenCode was not detected on this machine"
-	piMissingReason       = "Pi was not detected on this machine"
+	openCodeMissingReason        = "OpenCode was not detected on this machine"
+	openCodePluginsRetiredReason = "OpenCode community plugins are no longer offered; existing configuration is preserved"
+	piMissingReason              = "Pi was not detected on this machine"
 )
 
 // pluginAgentParams names whose plugins a method is about: "opencode" (the
@@ -46,9 +47,8 @@ func (p pluginAgentParams) pi() (bool, error) {
 	}
 }
 
-// listPlugins offers the installable OpenCode community plugins plus any
-// installed plugin that is no longer offered, so it can still be removed; or,
-// for Pi, the optional Pi packages and which of them Pi declares.
+// listPlugins lists existing OpenCode registrations only for removal, or the
+// optional Pi packages and which of them Pi declares.
 func listPlugins(ctx context.Context, env *env, params pluginAgentParams) (any, error) {
 	isPi, err := params.pi()
 	if err != nil {
@@ -72,15 +72,7 @@ func listPlugins(ctx context.Context, env *env, params pluginAgentParams) (any, 
 	}
 	installed := opencodeplugin.InstalledIDs(env.deps.HomeDir)
 	plugins := []pluginInfo{}
-	offered := map[model.OpenCodeCommunityPluginID]bool{}
-	for _, def := range opencodeplugin.Definitions() {
-		offered[def.ID] = true
-		plugins = append(plugins, pluginInfo{ID: string(def.ID), Name: def.Name, Description: def.Description, RepoURL: def.RepoURL, Installed: slices.Contains(installed, def.ID)})
-	}
 	for _, id := range installed {
-		if offered[id] {
-			continue
-		}
 		info := pluginInfo{ID: string(id), Name: string(id), Installed: true}
 		if def, ok := opencodeplugin.DefinitionFor(id); ok {
 			info.Name, info.Description, info.RepoURL = def.Name, def.Description, def.RepoURL
@@ -109,17 +101,6 @@ type pluginsInstallResult struct {
 	Results []pluginInstallResult `json:"results"`
 }
 
-func requireOpenCode(ctx context.Context, env *env) error {
-	detection, err := env.deps.detect(ctx)
-	if err != nil {
-		return err
-	}
-	if !service.AgentDetected(detection, model.AgentOpenCode) {
-		return errorf(CodeUnsupported, "%s", openCodeMissingReason)
-	}
-	return nil
-}
-
 func installPlugins(ctx context.Context, env *env, params pluginIDsParams) (any, error) {
 	if len(params.IDs) == 0 {
 		return nil, invalidParams("ids must name at least one plugin")
@@ -131,26 +112,13 @@ func installPlugins(ctx context.Context, env *env, params pluginIDsParams) (any,
 	if isPi {
 		return installPiPlugins(ctx, env, params.IDs)
 	}
-	ids := make([]model.OpenCodeCommunityPluginID, 0, len(params.IDs))
 	for _, raw := range params.IDs {
 		id := model.OpenCodeCommunityPluginID(raw)
-		if !slices.ContainsFunc(opencodeplugin.Definitions(), func(def opencodeplugin.Definition) bool { return def.ID == id }) {
+		if _, known := opencodeplugin.DefinitionFor(id); !known && id != model.OpenCodePluginGentleLogo {
 			return nil, invalidParams("unknown OpenCode plugin %q", raw)
 		}
-		ids = append(ids, id)
 	}
-	if err := requireOpenCode(ctx, env); err != nil {
-		return nil, err
-	}
-	results, err := env.deps.InstallPlugins(env.deps.HomeDir, ids)
-	if err != nil {
-		return nil, errorf(CodeFailed, "install OpenCode plugins (%d of %d registered): %v", len(results), len(ids), err)
-	}
-	out := make([]pluginInstallResult, 0, len(results))
-	for i, result := range results {
-		out = append(out, pluginInstallResult{ID: string(ids[i]), Changed: result.Changed, Files: orEmpty(result.Files)})
-	}
-	return pluginsInstallResult{Results: out}, nil
+	return nil, errorf(CodeUnsupported, "%s", openCodePluginsRetiredReason)
 }
 
 type pluginIDParams struct {
@@ -169,8 +137,8 @@ type pluginUninstallResult struct {
 	CleanupPending     []string `json:"cleanupPending"`
 }
 
-// uninstallPlugin removes one installed plugin, like the TUI's uninstall
-// shortcut, which only offers what tui.json registers.
+// uninstallPlugin removes one installed plugin, offering only what its
+// agent's settings register.
 func uninstallPlugin(_ context.Context, env *env, params pluginIDParams) (any, error) {
 	if params.ID == "" {
 		return nil, invalidParams("id is required")

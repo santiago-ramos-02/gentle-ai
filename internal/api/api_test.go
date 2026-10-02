@@ -282,7 +282,7 @@ func TestPlanAsksTheInstallerQuestionsForTheSelection(t *testing.T) {
 	deps := testDeps(t)
 
 	got := result[planResult](t, deps, "plan", `{"selection":{"agents":["claude-code","opencode"],"preset":"custom","components":["skills","engram"]}}`)
-	if !slices.Equal(got.Questions, []string{"communityTools", "openCodePlugins", "skills", "rdd", "openCodeBackground"}) {
+	if !slices.Equal(got.Questions, []string{"communityTools", "skills", "rdd", "openCodeBackground"}) {
 		t.Errorf("custom questions = %v", got.Questions)
 	}
 	if !slices.Equal(got.Agents, []string{"claude-code", "opencode"}) || !slices.Contains(got.Components, "engram") {
@@ -303,7 +303,7 @@ func TestPlanAsksTheInstallerQuestionsForTheSelection(t *testing.T) {
 		t.Fatal(err)
 	}
 	resolved := result[planResult](t, deps, "plan", `{"selection":{"agents":["opencode"]}}`)
-	if !slices.Equal(resolved.Questions, []string{"communityTools", "openCodePlugins", "rdd"}) {
+	if !slices.Equal(resolved.Questions, []string{"communityTools", "rdd"}) {
 		t.Errorf("resolved background questions = %v", resolved.Questions)
 	}
 }

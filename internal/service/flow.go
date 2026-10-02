@@ -19,7 +19,6 @@ type InstallQuestion string
 
 const (
 	QuestionCommunityTools     InstallQuestion = "communityTools"
-	QuestionOpenCodePlugins    InstallQuestion = "openCodePlugins"
 	QuestionPiPlugins          InstallQuestion = "piPlugins"
 	QuestionSkills             InstallQuestion = "skills"
 	QuestionRDD                InstallQuestion = "rdd"
@@ -35,9 +34,6 @@ func InstallQuestions(selection model.Selection, priorOpenCode model.OpenCodeBac
 	questions := []InstallQuestion{}
 	if AsksCommunityTools(selection) {
 		questions = append(questions, QuestionCommunityTools)
-	}
-	if AsksOpenCodePlugins(selection) {
-		questions = append(questions, QuestionOpenCodePlugins)
 	}
 	if AsksPiPlugins(selection) {
 		questions = append(questions, QuestionPiPlugins)
@@ -82,11 +78,6 @@ func PiOnlyComponents() []model.ComponentID {
 // AsksCommunityTools reports whether the installer offers community tools.
 func AsksCommunityTools(selection model.Selection) bool {
 	return !IsPiOnlyAgents(selection.Agents)
-}
-
-// AsksOpenCodePlugins reports whether the installer offers OpenCode plugins.
-func AsksOpenCodePlugins(selection model.Selection) bool {
-	return selection.HasAgent(model.AgentOpenCode)
 }
 
 // AsksPiPlugins reports whether the installer offers optional Pi packages.
