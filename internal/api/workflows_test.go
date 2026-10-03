@@ -160,3 +160,24 @@ func TestUninstallExpandsModesAndRunsTheirFollowUps(t *testing.T) {
 	}
 	failure(t, deps, []string{"uninstall.run"}, `{"mode":"full","cwd":`+cwdJSON+`}`, CodeFailed)
 }
+
+// Upstream reports a pending Pi CodeGraph integration as missing because Pi cannot confirm its
+// MCP adapter loaded it. The API reports it as pending, so a host does not offer a setup that is
+// already done.
+func TestToolsListReportsPendingPiCodeGraphAsPending(t *testing.T) {
+	deps := testDeps(t)
+	deps.CommunityToolStatus = func(id model.CommunityToolID, _ string) communitytool.Status {
+		return communitytool.Status{Tool: id, CLI: communitytool.AvailabilityAvailable, Agents: []communitytool.AgentStatus{
+			{Agent: model.AgentPi, Name: "Pi", Status: communitytool.AgentStatusMissing, Detected: true, Reason: communitytool.ErrPiCodeGraphAdapterHealthUnavailable.Error()},
+			{Agent: model.AgentClaudeCode, Name: "Claude Code", Status: communitytool.AgentStatusMissing, Detected: true, Reason: "detected agent but no CodeGraph MCP or instruction marker was found"},
+		}}
+	}
+	listed := result[toolsResult](t, deps, "tools.list", "")
+	agents := listed.Tools[0].Agents
+	if agents[0].Status != "pending" || agents[0].Configured || !strings.Contains(agents[0].Reason, "cannot confirm") {
+		t.Fatalf("Pi = %+v, want pending, not configured, saying what Pi cannot confirm", agents[0])
+	}
+	if agents[1].Status != "missing" {
+		t.Fatalf("Claude Code = %+v, want missing unchanged", agents[1])
+	}
+}

@@ -11,6 +11,9 @@ import (
 	"github.com/gentleman-programming/gentle-ai/v4/internal/service"
 )
 
+// toolAgentStatusPending is a tool set up for an agent that cannot confirm it is active.
+const toolAgentStatusPending = "pending"
+
 type toolAgentStatus struct {
 	Agent      string `json:"agent"`
 	Name       string `json:"name"`
@@ -72,10 +75,18 @@ func listTools(_ context.Context, env *env, params toolsListParams) (any, error)
 			Installed:    slices.Contains(current.CommunityTools, string(status.Tool)),
 		}
 		for _, agent := range status.Agents {
-			info.Agents = append(info.Agents, toolAgentStatus{
+			entry := toolAgentStatus{
 				Agent: string(agent.Agent), Name: agent.Name, Status: string(agent.Status),
 				Detected: agent.Detected, Configured: agent.Configured, Path: agent.Path, Reason: agent.Reason,
-			})
+			}
+			// Upstream counts a set-up Pi integration as missing while Pi cannot confirm its
+			// MCP adapter loaded it; reporting it as pending keeps hosts from offering a setup
+			// that is already done.
+			if agent.Status == communitytool.AgentStatusMissing && agent.Reason == communitytool.ErrPiCodeGraphAdapterHealthUnavailable.Error() {
+				entry.Status = toolAgentStatusPending
+				entry.Reason = "set up and its MCP server answers, but Pi cannot confirm its MCP adapter loaded it"
+			}
+			info.Agents = append(info.Agents, entry)
 		}
 		tools = append(tools, info)
 	}

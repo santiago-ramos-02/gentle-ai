@@ -70,7 +70,7 @@ Field names are camelCase. Lists and objects are never `null`; an optional value
 | `plugins.list` | `agent` (optional; defaults to `opencode`) | Existing OpenCode registrations for removal, or available Pi packages: `plugins`, `supported`, `reason` |
 | `plugins.install` | `agent: "pi"`, `ids` | Per-plugin `changed` and `files`; OpenCode plugin installation returns `unsupported` |
 | `plugins.uninstall` | `agent` (optional), `id` | The layers the OpenCode uninstall touched, or Pi's removed `pluginId` |
-| `tools.list` | `cwd` (optional) | Community tools with CLI and per-agent status |
+| `tools.list` | `cwd` (optional) | Community tools with CLI and per-agent status; `pending` means set up, but the agent cannot confirm it is active (Pi's CodeGraph) |
 | `tools.install` | `ids`, `cwd` | Log events, then per-tool `commandsRun` and `manualActions` |
 | `builder.engines` | none | Agent builder `engines` and whether each is available |
 | `builder.generate` | `engine`, `prompt` | The generated `agent`, install `targets`, and name `conflicts` |
