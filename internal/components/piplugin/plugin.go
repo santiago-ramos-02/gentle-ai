@@ -29,7 +29,7 @@ var definitions = []Definition{
 		ID:          model.PiPluginClaudeBridge,
 		Name:        "Claude Bridge",
 		Source:      "npm:pi-claude-bridge",
-		RepoURL:     "https://github.com/ShikherVerma/pi-claude-bridge",
+		RepoURL:     "https://github.com/elidickinson/pi-claude-bridge",
 		Description: "Claude models in Pi on your Claude Pro/Max subscription, through Claude Code (sign in to Claude Code first)",
 	},
 }
