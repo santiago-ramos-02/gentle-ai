@@ -47,7 +47,7 @@ func Install(homeDir string, request InstallRequest, onProgress pipeline.Progres
 	profile := cli.ResolveInstallProfile(request.Detection)
 	resolved.PlatformDecision = planner.PlatformDecisionFromProfile(profile)
 
-	execResult, orchestrator := cli.ExecuteTUIInstallWithBackgroundAndOrchestrator(homeDir, selection, resolved, profile, request.OpenCodeBackground, request.PiBackground, onProgress)
+	execResult, orchestrator, codexServiceTier := cli.ExecuteTUIInstallRecordingCodexServiceTier(homeDir, selection, resolved, profile, request.OpenCodeBackground, request.PiBackground, onProgress)
 	// The caller settles asynchronously: keep the deduplicated rollback
 	// snapshot until state persistence succeeds or the failure has been
 	// compensated.
@@ -77,6 +77,9 @@ func Install(homeDir string, request InstallRequest, onProgress pipeline.Progres
 			installState.KiroModelAssignments = kiroAliasesToStrings(selection.KiroModelAssignments)
 			installState.CodexModelAssignments = codexEffortsToStrings(selection.CodexModelAssignments)
 			installState.CodexOrchestratorAssignment = codexOrchestratorToState(selection.CodexOrchestratorAssignment)
+			if codexServiceTier != nil { // only what engram actually left in config.toml
+				installState.CodexServiceTier = *codexServiceTier
+			}
 			installState.CodexCarrilModelAssignments = selection.CodexCarrilModelAssignments
 			installState.CodexPhaseModelAssignments = selection.CodexPhaseModelAssignments
 			installState.ModelAssignments = modelAssignmentsToState(selection.ModelAssignments)

@@ -30,6 +30,8 @@ gentle-ai review status \
 
 Claude Code also gets a deterministic per-session baseline and end-of-turn reminder through its installed `SessionStart` and `Stop` hooks, both backed by the review stop-hook subcommand: SessionStart records the session's starting candidate, and Stop reminds only about candidates that session itself produced; neither starts a review by itself.
 
+These hooks, like the telemetry and skill-registry hooks, are added to Claude Code settings that use comments or trailing commas (JSONC): the hook writers in install, sync, and uninstall rewrite only the `hooks` value and keep every other byte. Other settings writers, such as persona, permissions, and output style, still normalize the file. When the `hooks` value holds comments, or its key is duplicated or spelled with escapes, the hook writers stop with an error and leave the file unchanged rather than normalize it.
+
 ## Cross-repository root
 
 A session in repository A may review a nested target in unrelated repository B only after the user explicitly authorizes B. Native Go resolves the requested path to B's canonical worktree root; adapters carry opaque provider output and never parse authorization or roots.
@@ -43,6 +45,17 @@ A session in repository A may review a nested target in unrelated repository B o
 | Delivery | Ordinary repository policy and any explicit delivery authorization name B. Approval never authorizes delivery. |
 
 This lifecycle is available only to Claude Code, Codex, OpenCode, and Pi. Unsupported runtimes fail before repository or authority mutation.
+
+### Repository context handles
+
+The provider-issued `repository_context` stays opaque (#3797). Its format depends on the runtime that STATUS renders for: the declared `--agent`, else Pi when the exact Pi relay handshake (`GENTLE_PI_REVIEW_RELAY_CONTRACT`) is present, else the lineage's frozen runtime. A lineage that froze no runtime keeps the manual route.
+
+| Handle | Issued to | Resolution |
+| --- | --- | --- |
+| `rctx2_` + sha256 hex | Claude Code, Codex, Pi, manual, and every START/STATUS envelope | A digest over repository identity, lineage, target, and revision, verified against the caller's repository (`--cwd`). |
+| `rctx3_` + unpadded base64url | OpenCode collect inputs and provider tasks only (#5136, #4516) | Seals B's canonical root and identity digest with AES-256-GCM under a private per-user key, `~/.gentle-ai/review-context.key` (32 bytes, mode `0600`, created on first use). Go opens the repository at the sealed root only, re-derives the digest, and requires live authority. Host cwd, worktree registries, and submodule lists never take part. |
+
+The OpenCode relay resolves `rctx3` only; given `rctx2`, it refuses and names the OpenCode STATUS that reissues the Task. Other commands dispatch by prefix, so an OpenCode host can run `capture-result`, `capture-unachievable`, or `lens-context` with its collect input from any cwd. A tampered handle, another user's handle, a moved or replaced root, or stale authority refuses without mutation. An unsafe key file refuses with its repair.
 
 ## Atomic lifecycle
 

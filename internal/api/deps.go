@@ -90,7 +90,7 @@ func DefaultDeps(version, homeDir string) Deps {
 		Doctor:              cli.DoctorChecks,
 		CheckUpdates:        update.CheckFiltered,
 		Sync:                service.Sync,
-		CodexModels:         model.DiscoverCodexModels,
+		CodexModels:         func(ctx context.Context) []string { return model.DiscoverCodexModels(ctx).Models },
 		ClaudeModels:        discoverClaudeProxyModels,
 		OpenCodeCatalog:     opencode.DiscoverCatalog,
 		Install:             service.Install,

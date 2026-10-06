@@ -1,7 +1,6 @@
 package uninstall
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -117,6 +116,9 @@ type operation struct {
 	// cleanup it was.
 	agents []model.AgentID
 	apply  func(path string) (changed bool, removed bool, err error)
+	// notes, when set, names what a successful apply kept for the user to
+	// decide on.
+	notes func() []string
 }
 
 // operationFailure records one operation that did not complete, so the run can
@@ -520,6 +522,10 @@ func (s *Service) buildPlan(agentIDs []model.AgentID, componentIDs []model.Compo
 				}
 				operationsByKey[key] = op
 			}
+			for _, op := range retainedOpenCodePluginOperations(adapter, s.homeDir) {
+				backupTargets[op.path] = struct{}{}
+				operationsByKey[operationKey(op)] = op
+			}
 		}
 	}
 	if slices.Contains(agentIDs, model.AgentOpenCode) && removesAllAgentComponents(componentIDs) {
@@ -554,13 +560,18 @@ func (s *Service) buildPlan(agentIDs []model.AgentID, componentIDs []model.Compo
 			backupTargets[op.path] = struct{}{}
 			operationsByKey[operationKey(op)] = op
 		}
-		for _, op := range retainedOpenCodePluginOperations(adapter, s.homeDir) {
-			backupTargets[op.path] = struct{}{}
-			operationsByKey[operationKey(op)] = op
-		}
 		for _, path := range opencodeactivation.LauncherPaths(s.homeDir, runtime.GOOS) {
 			backupTargets[path] = struct{}{}
 			operationsByKey[operationKey(removeOwnedOpenCodeLauncher(path))] = removeOwnedOpenCodeLauncher(path)
+		}
+		// Only profiles that carry the canonical managed block are snapshotted
+		// and rewritten; every other profile byte belongs to the user.
+		for _, path := range opencodeactivation.ManagedProfilePaths(s.homeDir) {
+			if runtime.GOOS == "windows" || !opencodeactivation.HasManagedProfileBlock(path) {
+				continue
+			}
+			backupTargets[path] = struct{}{}
+			operationsByKey[operationKey(removeOwnedOpenCodeProfileBlock(path))] = removeOwnedOpenCodeProfileBlock(path)
 		}
 	}
 
@@ -648,6 +659,9 @@ func (s *Service) executePlan(p plan, agentsToRemove []model.AgentID) (Result, e
 		if err != nil {
 			failures = append(failures, operationFailure{path: op.path, agents: op.agents, err: err})
 			continue
+		}
+		if op.notes != nil {
+			result.ManualActions = append(result.ManualActions, op.notes()...)
 		}
 		if op.typeID == opRemoveIfEmpty && !removed {
 			if note, ok := manualActionForNonEmptyDirectory(op.path); ok {
@@ -1176,9 +1190,8 @@ func rewriteJSONFile(path string, jsonPaths ...jsonPath) operation {
 				}
 				return true, true, nil
 			}
-			// Preserve the file's existing mode: ~/.claude.json is injected
-			// with 0600 because it holds the OAuth session, and an uninstall
-			// rewrite must not widen it.
+			// Preserve the file's existing mode: an uninstall rewrite must
+			// not widen permissions on a file the user or agent restricted.
 			perm := os.FileMode(0o644)
 			if info, statErr := os.Lstat(path); statErr == nil {
 				perm = info.Mode().Perm()
@@ -1247,7 +1260,8 @@ func rewriteSkillRegistryHook(path string) operation {
 			if !changed {
 				return false, false, nil
 			}
-			if jsonIsEmptyObject(updated) {
+			// An emptied object that still holds JSONC comments is user text.
+			if jsonIsEmptyObject(updated) && json.Valid(updated) {
 				if err := removeFileIfExists(path); err != nil {
 					return false, false, err
 				}
@@ -1271,14 +1285,30 @@ func managedRetainedHookCommand(cmd string) bool {
 		cmd == "gentle-ai telemetry runtime codex --json"
 }
 
+// removeSkillRegistryHook removes the managed hook commands. Strict JSON is
+// re-encoded; JSONC keeps every byte outside the hooks value and refuses,
+// rather than normalizes, hooks spelled with escapes or holding comments.
 func removeSkillRegistryHook(raw []byte) ([]byte, bool, error) {
+	strict := json.Valid(raw)
 	root := map[string]any{}
-	if err := json.Unmarshal(raw, &root); err != nil {
-		return nil, false, err
+	if strict {
+		if err := json.Unmarshal(raw, &root); err != nil {
+			return nil, false, err
+		}
+	} else {
+		decoded, err := filemerge.UnmarshalJSONObject(raw)
+		if err != nil {
+			return nil, false, err
+		}
+		root = decoded
 	}
 	hooksMap, ok := root["hooks"].(map[string]any)
 	if !ok {
 		return raw, false, nil
+	}
+	events := make([]string, 0, len(hooksMap))
+	for event := range hooksMap {
+		events = append(events, event)
 	}
 	changed := false
 	for _, hookKey := range []string{"UserPromptSubmit", "SessionStart", "Stop", "SubagentStop", "PreToolUse", "PostToolUse", "SessionEnd"} {
@@ -1324,6 +1354,27 @@ func removeSkillRegistryHook(raw []byte) ([]byte, bool, error) {
 	if !changed {
 		return raw, false, nil
 	}
+	if !strict && len(hooksMap) == 0 {
+		updated, kept, err := filemerge.RemoveJSONCMembers(raw, []string{"hooks"}, events, true)
+		if err != nil {
+			return nil, false, err
+		}
+		if len(kept) > 0 {
+			return nil, false, fmt.Errorf("refuse to remove hooks %v spelled with escapes or holding comments; remove the Gentle AI hooks yourself", kept)
+		}
+		return updated, true, nil
+	}
+	if !strict {
+		overlay, err := json.Marshal(map[string]any{"hooks": map[string]any{"__replace__": hooksMap}})
+		if err != nil {
+			return nil, false, err
+		}
+		updated, err := filemerge.MergeOpenCodeJSONCObjects(raw, overlay)
+		if err != nil {
+			return nil, false, err
+		}
+		return updated, true, nil
+	}
 	if len(hooksMap) == 0 {
 		delete(root, "hooks")
 	}
@@ -1365,28 +1416,56 @@ func rewriteTOMLFile(path string, mutate func(content string) (string, bool)) op
 }
 
 // retainedOpenCodePluginOperations is an agent-removal boundary, independent of
-// legacy SDD and skills. Unknown or modified plugin bytes are never removed.
+// legacy SDD and skills. Plugin bytes no Gentle AI release shipped are never
+// removed, and neither is a plugins path that is not a real directory: Install
+// refuses a symlinked plugins directory as user-owned, so uninstall neither
+// removes the link nor deletes through it.
 func retainedOpenCodePluginOperations(adapter agents.Adapter, homeDir string) []operation {
-	pluginDir := filepath.Join(adapter.GlobalConfigDir(homeDir), "plugins")
 	ops := make([]operation, 0)
-	for _, name := range append([]string{"background-agents.ts"}, opencoderuntimeplugins.OpenCodePluginLifecycleNames(adapter.Agent())...) {
-		path := filepath.Join(pluginDir, name)
-		ops = append(ops, removeEmbeddedOpenCodePlugin(path, name))
+	for _, path := range opencoderuntimeplugins.PluginPaths(homeDir, adapter) {
+		ops = append(ops, removeReleasedOpenCodePlugin(path))
 	}
-	ops = append(ops, removeDirIfEmpty(pluginDir))
-	for _, path := range modelVariantsCachePaths(filepath.Join(homeDir, ".gentle-ai", "cache")) {
-		op := removeFile(path)
-		op.agents = []model.AgentID{model.AgentOpenCode}
-		ops = append(ops, op)
+	dirOp := removeDirIfEmpty(filepath.Join(adapter.GlobalConfigDir(homeDir), "plugins"))
+	removeEmpty := dirOp.apply
+	dirOp.apply = func(path string) (bool, bool, error) {
+		if real, err := isRealDirectory(path); !real || err != nil {
+			return false, false, err
+		}
+		return removeEmpty(path)
 	}
+	ops = append(ops, dirOp)
+	// The model-variants cache is shared by the OpenCode family; only an
+	// OpenCode removal clears it, as before Kilocode plugins were removed.
+	if adapter.Agent() == model.AgentOpenCode {
+		for _, path := range modelVariantsCachePaths(filepath.Join(homeDir, ".gentle-ai", "cache")) {
+			ops = append(ops, removeFile(path))
+		}
+	}
+	// Attribute every operation to the agent being removed, so a failure keeps
+	// that agent's uninstall incomplete and names it in the rerun hint.
 	for i := range ops {
-		ops[i].agents = []model.AgentID{model.AgentOpenCode}
+		ops[i].agents = []model.AgentID{adapter.Agent()}
 	}
 	return ops
 }
 
-func removeEmbeddedOpenCodePlugin(path, name string) operation {
+// isRealDirectory reports whether path is a directory and not a symlink to one.
+func isRealDirectory(path string) (bool, error) {
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return info.IsDir(), nil
+}
+
+func removeReleasedOpenCodePlugin(path string) operation {
 	return operation{typeID: opRemoveFile, path: path, agents: []model.AgentID{model.AgentOpenCode}, apply: func(path string) (bool, bool, error) {
+		if real, err := isRealDirectory(filepath.Dir(path)); !real || err != nil {
+			return false, false, err
+		}
 		info, err := os.Lstat(path)
 		if os.IsNotExist(err) {
 			return false, false, nil
@@ -1401,16 +1480,13 @@ func removeEmbeddedOpenCodePlugin(path, name string) operation {
 		if err != nil {
 			return false, false, err
 		}
-		for _, dir := range []string{"opencode/plugins/", "opencode/plugins-v2/"} {
-			managed, err := assets.Read(dir + name)
-			if err == nil && bytes.Equal(installed, []byte(managed)) {
-				if err := os.Remove(path); err != nil {
-					return false, false, err
-				}
-				return true, true, nil
-			}
+		if !opencoderuntimeplugins.ReleasedPlugin(filepath.Base(path), installed) {
+			return false, false, nil
 		}
-		return false, false, nil
+		if err := os.Remove(path); err != nil {
+			return false, false, err
+		}
+		return true, true, nil
 	}}
 }
 
@@ -1694,6 +1770,15 @@ func mergeRewriteOps(a, b operation) operation {
 			changed2, removed2, err2 := b.apply(path)
 			return changed1 || changed2, removed2, err2
 		},
+		notes: func() []string {
+			var notes []string
+			for _, op := range []operation{a, b} {
+				if op.notes != nil {
+					notes = append(notes, op.notes()...)
+				}
+			}
+			return notes
+		},
 	}
 }
 
@@ -1758,20 +1843,23 @@ func removeOwnedOpenCodeLauncher(path string) operation {
 		path:   path,
 		agents: []model.AgentID{model.AgentOpenCode},
 		apply: func(path string) (bool, bool, error) {
-			data, err := os.ReadFile(path)
-			if os.IsNotExist(err) {
-				return false, false, nil
-			}
-			if err != nil {
-				return false, false, err
-			}
-			if !bytes.Contains(data, []byte(opencodeactivation.OwnershipMarker)) {
-				return false, false, nil
-			}
-			if err := os.Remove(path); err != nil {
+			result, err := opencodeactivation.RemoveManagedLauncher(path)
+			if err != nil || !result.Removed() {
 				return false, false, err
 			}
 			return true, true, nil
+		},
+	}
+}
+
+func removeOwnedOpenCodeProfileBlock(path string) operation {
+	return operation{
+		typeID: opRewriteFile,
+		path:   path,
+		agents: []model.AgentID{model.AgentOpenCode},
+		apply: func(path string) (bool, bool, error) {
+			changed, err := opencodeactivation.RemoveManagedProfileBlock(path)
+			return changed, false, err
 		},
 	}
 }

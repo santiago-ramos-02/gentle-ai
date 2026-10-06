@@ -136,9 +136,9 @@ Small changes should not need a planning pipeline, and larger work should not lo
 
 ---
 
-### Strict TDD — Prove behavior when enabled
+### Test-first by default — Prove each requested rule
 
-ODD uses the configured TDD mode and exact test runner. When Strict TDD is enabled, capture a failing behavior test before implementation, make it pass, then refactor while tests stay green. When disabled, run applicable functional checks anyway. The presence of tests alone does not enable Strict TDD.
+ODD applies test-first development by default when a relevant runnable test and a clear expected outcome exist: capture a failing behavior test before implementation, make it pass, then refactor while tests stay green. Each requested rule gets one RED test, each touched existing command or option gets one test proving its previous behavior still holds, and nothing else is padded in. Without a meaningful runnable test, the agent explains the exception and runs applicable functional checks anyway.
 
 **[Docs →](docs/usage.md#organic-driven-development-odd)**
 
@@ -228,6 +228,8 @@ gentle-ai doctor   # verify — read-only, changes nothing
 Or set it up from **Settings > Gentle AI** in [T3 Code](https://github.com/santiago-ramos-02/t3code). Your configs are snapshotted before every write, and **Gentle-AI never installs an AI agent for you** — it configures what you already have.
 
 To go back to the official release, install it from [Gentleman-Programming/gentle-ai](https://github.com/Gentleman-Programming/gentle-ai#get-started).
+
+> **Beta channel and per-distro prerequisites: [Quickstart →](docs/quickstart.md) · Signature verification: [Release signing →](docs/release-signing.md#user-verification)**
 
 <div align="right"><a href="#top">Back to top</a></div>
 
