@@ -32,6 +32,7 @@ internal/
     communitytool/         Community tool install/guidance/config orchestration
     opencodeagents/        OpenCode-compatible agents owned by gentle-ai
     opencodedefault/       OpenCode default_agent ownership and custom agent discovery
+    piplugin/              Optional Pi packages, such as the Claude bridge
     opencodeplugin/        OpenCode TUI plugin registration/local plugin helpers
     opencoderuntimeplugins/  Names and eligibility of managed OpenCode runtime plugins
     uninstall/             Managed uninstall cleanup service

@@ -701,7 +701,6 @@ func TestAdapterInstallCommandSequenceUsesNpmWhenPnpmIsUnavailable(t *testing.T)
 	want := [][]string{
 		{"pi", "install", "npm:gentle-pi"},
 		{"pi", "install", "npm:gentle-engram"},
-		{"npm", "exec", "--yes", "--package", "gentle-engram@latest", "--", "pi-engram", "init"},
 		{"pi", "install", "npm:pi-web-access"},
 		{"pi", "install", "npm:pi-btw"},
 	}
@@ -710,7 +709,7 @@ func TestAdapterInstallCommandSequenceUsesNpmWhenPnpmIsUnavailable(t *testing.T)
 	}
 }
 
-func TestAdapterInstallCommandSequenceUsesNpmForEngramInitWhenPnpmIsAvailable(t *testing.T) {
+func TestAdapterInstallCommandSequenceUsesPiWhenPnpmIsAvailable(t *testing.T) {
 	a := &Adapter{
 		lookPath: func(file string) (string, error) {
 			if file == "pnpm" {
@@ -725,9 +724,14 @@ func TestAdapterInstallCommandSequenceUsesNpmForEngramInitWhenPnpmIsAvailable(t 
 		t.Fatalf("InstallCommand() error = %v", err)
 	}
 
-	want := []string{"npm", "exec", "--yes", "--package", "gentle-engram@latest", "--", "pi-engram", "init"}
-	if !reflect.DeepEqual(commands[2], want) {
-		t.Fatalf("InstallCommand()[2] = %#v, want %#v", commands[2], want)
+	want := [][]string{
+		{"pi", "install", "npm:gentle-pi"},
+		{"pi", "install", "npm:gentle-engram"},
+		{"pi", "install", "npm:pi-web-access"},
+		{"pi", "install", "npm:pi-btw"},
+	}
+	if !reflect.DeepEqual(commands, want) {
+		t.Fatalf("InstallCommand() = %#v, want %#v", commands, want)
 	}
 }
 
@@ -739,29 +743,6 @@ func TestRetainPiPackagesKeepsSubagentsPackageWhileGentlePiIsPinnedBelowGentleAg
 	dropped := retainPiPackages([]any{"npm:gentle-pi@2.5.0", "npm:pi-subagents-j0k3r"})
 	if !reflect.DeepEqual(dropped, []any{"npm:gentle-pi@2.5.0"}) {
 		t.Fatalf("retainPiPackages() with gentle-pi 2.5.0 = %v, want the subagents package dropped", dropped)
-	}
-}
-
-// pi install and pi-engram init both declare gentle-engram; Pi must load it once.
-func TestRetainPiPackagesKeepsOneEntryPerNPMPackage(t *testing.T) {
-	got := retainPiPackages([]any{
-		"git:github.com/example/gentle-shell",
-		"npm:gentle-engram",
-		"npm:@upstash/context7-pi",
-		"npm:gentle-engram@0.1.16",
-		"npm:@upstash/context7-pi@0.1.2",
-		"npm:pi-btw@0.6.1",
-		"npm:pi-btw@0.6.1",
-		"npm:pi-mcp-adapter",
-	})
-	want := []any{
-		"git:github.com/example/gentle-shell",
-		"npm:gentle-engram",
-		"npm:@upstash/context7-pi",
-		"npm:pi-btw@0.6.1",
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("retainPiPackages() = %v, want %v", got, want)
 	}
 }
 
