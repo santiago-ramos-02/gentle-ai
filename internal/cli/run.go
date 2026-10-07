@@ -21,6 +21,7 @@ import (
 	"github.com/gentleman-programming/gentle-ai/v4/internal/agents"
 	"github.com/gentleman-programming/gentle-ai/v4/internal/agents/claude"
 	codexagent "github.com/gentleman-programming/gentle-ai/v4/internal/agents/codex"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/agents/cursor"
 	"github.com/gentleman-programming/gentle-ai/v4/internal/agents/kimi"
 	opencodeagent "github.com/gentleman-programming/gentle-ai/v4/internal/agents/opencode"
 	piagent "github.com/gentleman-programming/gentle-ai/v4/internal/agents/pi"
@@ -255,6 +256,7 @@ func RunInstall(args []string, detection system.DetectionResult) (InstallResult,
 	runtime.backgroundActivation = backgroundActivation
 	runtime.runtimeReady = backgroundActivation != nil && backgroundActivation.Capability().Ready()
 	runtime.piBackgroundProjection = piBackgroundProjection
+	runtime.claudeOrchestratorModules = input.ClaudeOrchestratorModules
 
 	stagePlan = installStagePlan(runtime)
 	result.Plan = stagePlan
@@ -448,7 +450,12 @@ func mergeExplicitAgentInstallState(homeDir string, newState state.InstallState,
 	if newState.CodexPhaseModelAssignments != nil {
 		merged.CodexPhaseModelAssignments = newState.CodexPhaseModelAssignments
 	}
-	if merged.SelectionConfigured {
+	if !merged.SelectionConfigured && newState.SelectionConfigured {
+		// A metadata-only or legacy state has no selection to preserve.
+		merged.SelectionConfigured = true
+		merged.Components, merged.Skills = newState.Components, newState.Skills
+		merged.Preset, merged.SDDMode = newState.Preset, newState.SDDMode
+	} else if merged.SelectionConfigured {
 		if len(flags.Components) > 0 {
 			merged.Components = newState.Components
 		}
@@ -712,6 +719,11 @@ type installRuntime struct {
 
 	piBackgroundProjection *piBackgroundProjectionPlan
 	progress               pipeline.ProgressFunc
+
+	// claudeOrchestratorModules is the explicit install opt-in for the
+	// user-global Claude module pilot. stagePlan hands it to both the backup
+	// planner and the routing step, so it must be set before the plan is built.
+	claudeOrchestratorModules bool
 }
 
 type runtimeState struct {
@@ -794,7 +806,7 @@ func newInstallRuntime(homeDir string, scope InstallScope, channel InstallChanne
 }
 
 func (r *installRuntime) stagePlan() pipeline.StagePlan {
-	targets, targetErr := backupTargets(r.homeDir, r.workspaceDir, r.scope, r.selection, r.resolved)
+	targets, targetErr := installBackupTargets(r.homeDir, r.workspaceDir, r.scope, r.selection, r.resolved, r.claudeOrchestratorModules)
 	prepare := []pipeline.Step{
 		prepareBackupStep{
 			id:          "prepare:backup-snapshot",
@@ -919,6 +931,7 @@ func (r *installRuntime) stagePlan() pipeline.StagePlan {
 			homeDir:          r.homeDir,
 			workspaceDir:     r.workspaceDir,
 			scope:            r.scope,
+			claudeModules:    r.claudeOrchestratorModules,
 		})
 	}
 
@@ -996,119 +1009,59 @@ func (s nativeReviewAgentStep) Run() error {
 // wrote (#5157). The pipeline snapshot captures the same inventory first
 // (retiredSDDAssetBackupPaths).
 type retiredSDDAssetsStep struct {
-	id string
-	// agent is empty for the shared ~/.agents/skills root.
-	agent    model.AgentID
-	dirs     legacyassets.SDDAssetDirs
-	settings string
-	// blocks are prompt files whose SDD orchestrator block is removed.
-	blocks       []sddPromptFile
-	kimiHub      sddPromptFile
+	id           string
+	inventory    legacyassets.SDDInventory
 	changedFiles *[]string
 	state        *runtimeState
 }
 
-// sddPromptFile is a prompt file holding retired SDD text, edited only when
-// every directory from root down to it is a real directory, with the active
-// prompt routing guidance migrates instead (empty when none).
-type sddPromptFile struct{ root, path, active string }
-
 func (s retiredSDDAssetsStep) ID() string { return s.id }
 
 func (s retiredSDDAssetsStep) Run() error {
-	res, err := legacyassets.RetireSDDAssets(s.agent, s.dirs)
+	res, err := s.inventory.Retire()
 	if s.changedFiles != nil {
 		*s.changedFiles = append(*s.changedFiles, res.Removed...)
+		*s.changedFiles = append(*s.changedFiles, res.Rewritten...)
 	}
 	if err != nil {
-		return fmt.Errorf("retire SDD files for %q: %w", s.agent, err)
-	}
-	actions := res.ManualActions()
-	if s.settings != "" {
-		hook, err := legacyassets.RetireClaudeSDDPreflightHook(s.settings)
-		if err != nil {
-			return fmt.Errorf("retire SDD preflight hook: %w", err)
-		}
-		if hook.Removed && s.changedFiles != nil {
-			*s.changedFiles = append(*s.changedFiles, s.settings)
-		}
-		actions = append(actions, hook.ManualActions()...)
-	}
-	texts := make([]legacyassets.TextRetireResult, 0, len(s.blocks)+1)
-	for _, block := range s.blocks {
-		res, err := legacyassets.RetireSDDOrchestratorBlock(block.root, block.path, block.active)
-		if err != nil {
-			return fmt.Errorf("retire SDD orchestrator block: %w", err)
-		}
-		texts = append(texts, res)
-	}
-	if s.kimiHub.path != "" {
-		res, err := legacyassets.RetireKimiSDDInclude(s.kimiHub.root, s.kimiHub.path)
-		if err != nil {
-			return fmt.Errorf("retire Kimi SDD include: %w", err)
-		}
-		texts = append(texts, res)
-	}
-	for _, res := range texts {
-		if res.Removed && s.changedFiles != nil {
-			*s.changedFiles = append(*s.changedFiles, res.Path)
-		}
-		actions = append(actions, res.ManualActions()...)
+		return err
 	}
 	if s.state != nil {
-		s.state.retiredSDDActions = append(s.state.retiredSDDActions, actions...)
+		s.state.retiredSDDActions = append(s.state.retiredSDDActions, res.ManualActions...)
 	}
 	return nil
 }
 
 // retiredSDDAssetSteps resolves where releases installed retired SDD files
-// for the selected runtimes in this scope: skills, commands, Codex profiles,
-// the Kimi module, SDD prompt text, and the Claude Code hook under the
-// scoped config root, the Windsurf workflow only in a workspace-scoped run
-// (releases wrote it into the project), and the shared ~/.agents/skills root
-// only in a global run on platforms where the generic snapshot owns it. Pi is
-// skipped: gentle-pi owns its home (#5219).
+// for the selected runtimes in this scope: the legacyassets inventory under
+// the scoped config root, the Windsurf workflow only in a workspace-scoped
+// run (releases wrote it into the project), and the shared ~/.agents/skills
+// root only in a global run on platforms where the generic snapshot owns it.
+// Pi has no inventory: gentle-pi owns its home (#5219).
 func retiredSDDAssetSteps(prefix, homeDir, workspaceDir string, scope InstallScope, agentIDs []model.AgentID, changedFiles *[]string, state *runtimeState) []retiredSDDAssetsStep {
 	var steps []retiredSDDAssetsStep
 	for _, adapter := range resolveAdapters(agentIDs) {
 		if adapter.Agent() == model.AgentPi {
 			continue
 		}
-		root := componentInjectionDirScoped(homeDir, workspaceDir, scope, adapter)
-		step := retiredSDDAssetsStep{id: prefix + string(adapter.Agent()), agent: adapter.Agent(), changedFiles: changedFiles, state: state}
-		if adapter.SupportsSkills() {
-			step.dirs.Skills = adapter.SkillsDir(root)
-		}
-		if adapter.SupportsSlashCommands() {
-			step.dirs.Commands = adapter.CommandsDir(root)
-		}
-		if flows, ok := adapter.(interface{ WorkflowsDir(string) string }); ok && scope == ScopeWorkspace {
-			step.dirs.Workflows = flows.WorkflowsDir(workspaceDir)
-		}
-		if adapter.Agent() == model.AgentClaudeCode {
-			step.settings = adapter.SettingsPath(root)
-		}
 		// A workspace-scoped install wrote these under the workspace too.
-		files := legacyassets.RetiredSDDRuntimeFiles(adapter.Agent(), root)
-		step.dirs.CodexHome, step.dirs.KimiHome = files.Dirs.CodexHome, files.Dirs.KimiHome
-		if files.Hub != "" {
-			step.kimiHub = sddPromptFile{root: files.Dirs.KimiHome, path: files.Hub}
-		}
-		if files.Prompt != "" {
-			step.blocks = append(step.blocks, sddPromptFile{files.Dirs.CodexHome, files.Prompt, files.Active})
+		root := componentInjectionDirScoped(homeDir, workspaceDir, scope, adapter)
+		inventory := legacyassets.RetiredSDDInventory(adapter, root)
+		if flows, ok := adapter.(interface{ WorkflowsDir(string) string }); ok && scope == ScopeWorkspace {
+			inventory.Dirs.Workflows = flows.WorkflowsDir(workspaceDir)
 		}
 		// A workspace sync delivers no routing guidance to these runtimes, so
 		// nothing migrates the v3.7.0 SDD block of their project prompt.
 		if scope == ScopeWorkspace && workspaceRoutingGuidanceGlobalOnly(adapter.Agent()) &&
 			!agentguidance.DeliversThroughOrchestratorPrompt(adapter.Agent()) && adapter.SupportsSystemPrompt() {
 			prompt := adapter.SystemPromptFile(root)
-			step.blocks = append(step.blocks, sddPromptFile{root: filepath.Dir(prompt), path: prompt})
+			inventory.Blocks = append(inventory.Blocks, legacyassets.SDDPromptFile{Root: filepath.Dir(prompt), Path: prompt})
 		}
-		steps = append(steps, step)
+		steps = append(steps, retiredSDDAssetsStep{id: prefix + string(adapter.Agent()), inventory: inventory, changedFiles: changedFiles, state: state})
 	}
 	if scope != ScopeWorkspace && !usesAnchoredCompatibilityTransaction() {
 		if dir, ok, err := compatibilitySkillsDir(homeDir); err == nil && ok {
-			steps = append(steps, retiredSDDAssetsStep{id: prefix + "compatibility-skills", dirs: legacyassets.SDDAssetDirs{Skills: dir}, changedFiles: changedFiles, state: state})
+			steps = append(steps, retiredSDDAssetsStep{id: prefix + "compatibility-skills", inventory: legacyassets.SDDInventory{Dirs: legacyassets.SDDAssetDirs{Skills: dir}}, changedFiles: changedFiles, state: state})
 		}
 	}
 	return steps
@@ -1128,15 +1081,7 @@ func retiredSDDAssetStepList(steps []retiredSDDAssetsStep) []pipeline.Step {
 func retiredSDDAssetBackupPaths(homeDir, workspaceDir string, scope InstallScope, agentIDs []model.AgentID) []string {
 	var paths []string
 	for _, step := range retiredSDDAssetSteps("", homeDir, workspaceDir, scope, agentIDs, nil, nil) {
-		paths = append(paths, legacyassets.PresentRetiredSDDAssetPaths(step.agent, step.dirs)...)
-		if step.settings != "" {
-			paths = append(paths, step.settings)
-		}
-		for _, prompt := range append([]sddPromptFile{step.kimiHub}, step.blocks...) {
-			if prompt.path != "" && legacyassets.RetirablePromptFile(prompt.root, prompt.path) {
-				paths = append(paths, prompt.path)
-			}
-		}
+		paths = append(paths, step.inventory.BackupPaths()...)
 	}
 	return paths
 }
@@ -1942,6 +1887,10 @@ type agentRoutingGuidanceStep struct {
 	workspaceDir     string
 	scope            InstallScope
 
+	// claudeModules is install's explicit opt-in for the user-global Claude
+	// module pilot. Sync leaves it false and only continues an installed pilot.
+	claudeModules bool
+
 	// changedFiles is the shared sync accumulator. Install leaves it nil and
 	// reports progress through the pipeline instead.
 	changedFiles *[]string
@@ -1954,8 +1903,20 @@ func (s agentRoutingGuidanceStep) Run() error {
 	if err != nil {
 		return fmt.Errorf("create adapter for %q: %w", s.agent, err)
 	}
+	// Resolve delivery before any write, so a Claude module pilot that cannot
+	// be inspected fails this step with nothing changed.
+	options, err := scopedRoutingGuidanceOptions(s.homeDir, s.workspaceDir, s.scope, adapter, s.claudeModules)
+	if err != nil {
+		return err
+	}
 
-	retainedHooks, err := agenthooks.InstallRetainedClaudeHooks(s.homeDir, adapter)
+	// Claude loads both global and project settings. Keep its hooks within
+	// the selected scope without changing Codex's home-level hook delivery.
+	hookRoot := s.homeDir
+	if adapter.Agent() == model.AgentClaudeCode {
+		hookRoot = ResolveAgentConfigDir(s.scope, s.homeDir, s.workspaceDir)
+	}
+	retainedHooks, err := agenthooks.InstallRetainedClaudeHooks(hookRoot, adapter)
 	if err != nil {
 		return fmt.Errorf("install retained Claude hooks for %q: %w", s.agent, err)
 	}
@@ -1969,7 +1930,7 @@ func (s agentRoutingGuidanceStep) Run() error {
 	if s.changedFiles != nil && telemetryHooks.Changed {
 		*s.changedFiles = append(*s.changedFiles, telemetryHooks.Files...)
 	}
-	hooks, err := agenthooks.InstallSkillRegistry(s.homeDir, adapter)
+	hooks, err := agenthooks.InstallSkillRegistry(hookRoot, adapter)
 	if err != nil {
 		return fmt.Errorf("install skill-registry hook for %q: %w", s.agent, err)
 	}
@@ -2029,8 +1990,6 @@ func (s agentRoutingGuidanceStep) Run() error {
 			return fmt.Errorf("migrate legacy Kilo agents: %w", err)
 		}
 	}
-
-	options := routingGuidanceOptions(s.homeDir, s.workspaceDir, adapter)
 
 	// Strip first: an installation upgraded from an older release still carries
 	// the retired block, and leaving it beside fresh guidance would hand the
@@ -3789,7 +3748,10 @@ func selectedSkillIDs(selection model.Selection) []model.SkillID {
 	return skills.SkillsForPreset(selection.Preset)
 }
 
-func backupTargets(homeDir, workspaceDir string, scope InstallScope, selection model.Selection, resolved planner.ResolvedPlan) ([]string, error) {
+// installBackupTargets lists every path an install is about to rewrite. An
+// install that carries the explicit Claude module opt-in also plans every
+// pilot path, so the snapshot can restore it.
+func installBackupTargets(homeDir, workspaceDir string, scope InstallScope, selection model.Selection, resolved planner.ResolvedPlan, claudeModules bool) ([]string, error) {
 	paths := map[string]struct{}{}
 	adapters := resolveAdapters(resolved.Agents)
 	if configDir := openCodeTelemetryConfigDir(homeDir, workspaceDir, scope, resolved.Agents); configDir != "" {
@@ -3847,7 +3809,7 @@ func backupTargets(homeDir, workspaceDir string, scope InstallScope, selection m
 	// Routing guidance is delivered per agent outside the component loop, so a
 	// selection whose components do not happen to cover the same file would be
 	// rewritten without ever having been snapshotted (issue #1794).
-	for _, path := range routingGuidancePaths(homeDir, workspaceDir, scope, adapters) {
+	for _, path := range routingGuidancePathsWithClaudeModules(homeDir, workspaceDir, scope, adapters, claudeModules) {
 		paths[path] = struct{}{}
 	}
 	for _, path := range retiredSDDAssetBackupPaths(homeDir, workspaceDir, scope, resolved.Agents) {
@@ -3867,6 +3829,13 @@ func backupTargets(homeDir, workspaceDir string, scope InstallScope, selection m
 		}
 		for _, path := range retiredOpenCodeSDDBackupPaths(homeDir, workspaceDir, scope, []model.AgentID{adapter.Agent()}) {
 			paths[path] = struct{}{}
+		}
+		// Retained Claude hooks are installed independently of optional
+		// components. Snapshot the same scoped settings their writer uses.
+		if adapter.Agent() == model.AgentClaudeCode {
+			if path := adapter.SettingsPath(ResolveAgentConfigDir(scope, homeDir, workspaceDir)); path != "" {
+				paths[path] = struct{}{}
+			}
 		}
 		// Native review and Judgment Day agents are installed independently of SDD.
 		// Retired review agents are listed too: the installer may remove them.
@@ -4000,6 +3969,12 @@ func claudeMCPSettingsCleanupPaths(homeDir, workspaceDir string, scope InstallSc
 // the paths themselves come from the injector's own delivery dispatch, so the
 // backup contract cannot drift from what is actually written.
 func routingGuidancePaths(homeDir, workspaceDir string, scope InstallScope, adapters []agents.Adapter) []string {
+	return routingGuidancePathsWithClaudeModules(homeDir, workspaceDir, scope, adapters, false)
+}
+
+// routingGuidancePathsWithClaudeModules also takes install's explicit Claude
+// module opt-in, which the routing step receives too.
+func routingGuidancePathsWithClaudeModules(homeDir, workspaceDir string, scope InstallScope, adapters []agents.Adapter, claudeModules bool) []string {
 	paths := []string{}
 	for _, adapter := range adapters {
 		// Mirrors the same skip agentRoutingGuidanceStep.Run() applies: an
@@ -4009,14 +3984,15 @@ func routingGuidancePaths(homeDir, workspaceDir string, scope InstallScope, adap
 			continue
 		}
 		targetDir := routingGuidanceDir(homeDir, workspaceDir, scope, adapter)
-		options := routingGuidanceOptions(homeDir, workspaceDir, adapter)
-		var routing []string
-		var err error
-		if options.SettingsPath == "" {
-			routing, err = agentguidance.RoutingPaths(targetDir, adapter.Agent())
-		} else {
-			routing, err = agentguidance.RoutingPathsWithOptions(targetDir, adapter.Agent(), options)
+		options, err := scopedRoutingGuidanceOptions(homeDir, workspaceDir, scope, adapter, claudeModules)
+		if err != nil {
+			// The guidance step runs the same detection before any write and
+			// fails loudly, so there is nothing of this agent to snapshot.
+			continue
 		}
+		// Always with options: an empty SettingsPath must not drop the Claude
+		// module delivery the step will use.
+		routing, err := agentguidance.RoutingPathsWithOptions(targetDir, adapter.Agent(), options)
 		if err != nil {
 			// The guidance step resolves the same delivery and fails loudly when
 			// it runs. Declaring a target we could not resolve would only add a
@@ -4280,6 +4256,33 @@ func routingGuidanceOptions(homeDir, workspaceDir string, adapter agents.Adapter
 	return options
 }
 
+// scopedRoutingGuidanceOptions extends routingGuidanceOptions with the one
+// scope-dependent choice: a global Claude install continues the module pilot
+// whose ledger is already installed under homeDir (#5256), and creates it only
+// when claudeModules carries install's explicit opt-in. Otherwise, in the
+// workspace scope and for every other agent the options are unchanged. The
+// ledger is always looked up, so a ledger that cannot be inspected is an error
+// with or without the opt-in.
+//
+// The routing step and the install/sync snapshot planner both resolve through
+// here, so the snapshot covers the core, every module and the ledger. After a
+// failure, install and sync restore those files from that snapshot like any
+// other: an edit made while the run was in progress can be overwritten and a
+// file created meanwhile removed. Nothing here makes that restore concurrency
+// safe or atomic.
+func scopedRoutingGuidanceOptions(homeDir, workspaceDir string, scope InstallScope, adapter agents.Adapter, claudeModules bool) (agentguidance.RoutingOptions, error) {
+	options := routingGuidanceOptions(homeDir, workspaceDir, adapter)
+	if scope != ScopeGlobal || adapter.Agent() != model.AgentClaudeCode {
+		return options, nil
+	}
+	pilot, err := agentguidance.ClaudeGlobalModulePaths(homeDir)
+	if err != nil {
+		return agentguidance.RoutingOptions{}, fmt.Errorf("detect installed Claude module pilot: %w", err)
+	}
+	options.ClaudeGlobalModules = claudeModules || len(pilot) > 0
+	return options, nil
+}
+
 // routingGuidanceDir resolves the installation root routing guidance is
 // delivered under. Orchestrator-prompt adapters retain their home-level adapter
 // root for legacy cleanup and ordinary delivery; OpenCode's effective settings
@@ -4489,6 +4492,26 @@ func runPostApplyVerification(input postApplyVerificationInput) verify.Report {
 				return nil
 			},
 		})
+	}
+
+	if hasComponent(input.Resolved.OrderedComponents, model.ComponentPersona) && input.Selection.Persona != model.PersonaCustom {
+		for _, adapter := range adapters {
+			if adapter.Agent() != model.AgentCursor {
+				continue
+			}
+			targetDir := componentPathDirScoped(input.HomeDir, input.WorkspaceDir, input.Scope, adapter, model.ComponentPersona)
+			path := adapter.SystemPromptFile(targetDir)
+			checks = append(checks, verify.Check{
+				ID: "verify:cursor:rule-activation:" + path, Description: "Cursor rule activates in every conversation",
+				Run: func(context.Context) error {
+					content, err := os.ReadFile(path)
+					if err != nil {
+						return err
+					}
+					return cursor.ValidateRule(content)
+				},
+			})
+		}
 	}
 
 	if hasComponent(input.Resolved.OrderedComponents, model.ComponentEngram) {

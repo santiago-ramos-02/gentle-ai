@@ -63,7 +63,7 @@ func checkSingleTool(ctx context.Context, tool ToolInfo, currentBuildVersion str
 	}
 	result := UpdateResult{Tool: tool}
 	homebrewOwnership := HomebrewNone
-	if profile.PackageManager == "brew" && strings.TrimSpace(tool.NpmPackage) == "" {
+	if profile.PackageManager == "brew" {
 		var err error
 		homebrewOwnership, err = homebrewOwnershipDetector(tool.Name)
 		if err != nil {
@@ -83,7 +83,6 @@ func checkSingleTool(ctx context.Context, tool ToolInfo, currentBuildVersion str
 	// Run local detection and remote fetch concurrently.
 	var wg sync.WaitGroup
 	var localVersion string
-	var pluginRegistered bool
 	var release githubRelease
 	var mainCommit githubCommit
 	var fetchErr error
@@ -92,10 +91,6 @@ func checkSingleTool(ctx context.Context, tool ToolInfo, currentBuildVersion str
 
 	go func() {
 		defer wg.Done()
-		if strings.TrimSpace(tool.NpmPackage) != "" {
-			localVersion, pluginRegistered = detectOpenCodePluginPackage(tool.NpmPackage)
-			return
-		}
 		localVersion = detectInstalledVersion(ctx, tool, currentBuildVersion)
 	}()
 
@@ -147,15 +142,6 @@ func checkSingleTool(ctx context.Context, tool ToolInfo, currentBuildVersion str
 
 	// Determine status based on local version.
 	if localVersion == "" {
-		if strings.TrimSpace(tool.NpmPackage) != "" {
-			if pluginRegistered {
-				result.Status = RegisteredNotMaterialized
-				result.UpdateHint = openCodeRegisteredNotMaterializedHint(tool)
-				return result
-			}
-			result.Status = NotInstalled
-			return result
-		}
 		if tool.DetectCmd == nil {
 			// gentle-ai with no build version (shouldn't happen, but handle gracefully).
 			result.Status = VersionUnknown

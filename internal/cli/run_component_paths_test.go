@@ -1413,6 +1413,48 @@ func TestInstallRoutingGuidanceWorkspaceScopeDeliversOpenCodeToHome(t *testing.T
 	}
 }
 
+// TestRoutingLegacyTriggerCleanupStripsKilocodeSettings covers the Kilocode
+// branch of the legacy trigger-rule cleanup: Kilo keeps its orchestrator prompt
+// in its own settings document, not in a system prompt file.
+func TestRoutingLegacyTriggerCleanupStripsKilocodeSettings(t *testing.T) {
+	home := t.TempDir()
+	settingsPath := filepath.Join(home, ".config", "kilo", "opencode.json")
+	seeded := filemerge.InjectMarkdownSection("# My own notes\n", "trigger-rules", "Retired WorkRun ceremony\n")
+	payload, err := json.Marshal(map[string]any{
+		"agent": map[string]any{opencodedefault.ManagedAgent: map[string]any{"prompt": seeded}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustWriteFile(t, settingsPath, payload)
+
+	step := agentRoutingGuidanceStep{
+		id:      "agent-guidance:" + string(model.AgentKilocode),
+		agent:   model.AgentKilocode,
+		homeDir: home,
+		scope:   ScopeGlobal,
+	}
+	if err := step.Run(); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	var settings struct {
+		Agent map[string]struct {
+			Prompt string `json:"prompt"`
+		} `json:"agent"`
+	}
+	if err := json.Unmarshal([]byte(readTextFile(t, settingsPath)), &settings); err != nil {
+		t.Fatalf("decode Kilo settings error = %v", err)
+	}
+	prompt := settings.Agent[opencodedefault.ManagedAgent].Prompt
+	if strings.Contains(prompt, "Retired WorkRun ceremony") {
+		t.Fatalf("legacy trigger-rules content survived in the Kilo settings:\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "# My own notes") {
+		t.Fatalf("stripping the legacy section destroyed unmanaged user content:\n%s", prompt)
+	}
+}
+
 // TestRoutingLegacyTriggerCleanupTargetsSelectedOpenCodeSettings covers issue
 // #5025 item 2: the retired trigger-rules cleanup must act on the settings file
 // OpenCode loads, never on a non-loaded global decoy, for install and sync.
@@ -1586,7 +1628,7 @@ func TestBackupTargetsIncludeRoutingGuidancePathsWithoutAnyComponent(t *testing.
 		t.Fatalf("backupTargets() error = %v", err)
 	}
 
-	routing, err := agentguidance.RoutingPaths(home, agent)
+	routing, err := agentguidance.RoutingPathsWithOptions(home, agent, agentguidance.RoutingOptions{})
 	if err != nil {
 		t.Fatalf("RoutingPaths(%q) error = %v", agent, err)
 	}
@@ -1663,6 +1705,7 @@ func TestBackupTargetsClaudeContext7IncludeCleanupWithoutVerificationRequirement
 			if tc.wantRoot == "workspace" {
 				root = workspace
 			}
+			// Retained routing hooks and Context7 cleanup share selected-scope settings.
 			wantSettings := adapters[0].SettingsPath(root)
 			if !containsPath(targets, wantSettings) {
 				t.Fatalf("backupTargets missing cleanup path %q; targets=%v", wantSettings, targets)
@@ -1677,8 +1720,9 @@ func TestBackupTargetsClaudeContext7IncludeCleanupWithoutVerificationRequirement
 			if root == workspace {
 				otherRoot = home
 			}
-			if !tc.sameWorkspace && containsPath(targets, adapters[0].SettingsPath(otherRoot)) {
-				t.Fatalf("backupTargets selected the wrong scope's cleanup path; targets=%v", targets)
+			otherSettings := adapters[0].SettingsPath(otherRoot)
+			if !tc.sameWorkspace && containsPath(targets, otherSettings) {
+				t.Fatalf("backupTargets selected settings outside install scope; targets=%v", targets)
 			}
 		})
 	}
@@ -2015,4 +2059,10 @@ func TestInstallPrepareValidationScopesRefusalsToSelectedWriters(t *testing.T) {
 			}
 		})
 	}
+}
+
+// backupTargets is the monolithic install snapshot plan these tests assert:
+// installBackupTargets without the Claude module opt-in.
+func backupTargets(homeDir, workspaceDir string, scope InstallScope, selection model.Selection, resolved planner.ResolvedPlan) ([]string, error) {
+	return installBackupTargets(homeDir, workspaceDir, scope, selection, resolved, false)
 }

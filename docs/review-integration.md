@@ -57,6 +57,17 @@ The provider-issued `repository_context` stays opaque (#3797). Its format depend
 
 The OpenCode relay resolves `rctx3` only; given `rctx2`, it refuses and names the OpenCode STATUS that reissues the Task. Other commands dispatch by prefix, so an OpenCode host can run `capture-result`, `capture-unachievable`, or `lens-context` with its collect input from any cwd. A tampered handle, another user's handle, a moved or replaced root, or stale authority refuses without mutation. An unsafe key file refuses with its repair.
 
+### Opaque repository-context refusals
+
+An `rctx2_` handle is an opaque hexadecimal digest, not a path or proof of active authority. Resolution checks the supplied repository and binding against current authority without mutating it.
+
+| Code | Meaning and next action |
+| --- | --- |
+| `rctx2_binding_unusable` | Structurally invalid handle or binding tuple, or a tuple that does not match the supplied repository and handle. Verify `--cwd` names the intended repository, then obtain the exact native `next_transition`; do not reconstruct tokens. A digest mismatch cannot identify which field differs. |
+| `rctx2_resolution_failed` | An underlying repository or authority check failed. Inspect the scrubbed cause and verify the repository and active binding; refreshing alone may not repair missing, unreadable, or mismatched authority. This does not prove the binding was valid when issued. |
+
+Git ownership refusals retain `git_repository_untrusted`; authority from a newer release retains `review_authority_newer_release`. Neither is repaired by refreshing a transition. Unrelated, non-V2 errors retain their existing generic classification.
+
 ## Atomic lifecycle
 
 ### 1. Selectorless STATUS preflights only
@@ -225,6 +236,7 @@ A `stop` carries one reason code and no executable transition. The table below i
 | `staged_workspace_overlay_recovery_unavailable` | Terminal — pass `--lineage <id>` to recover an existing lineage, or drop `--workspace-overlay` and start a fresh target; otherwise run `gentle-ai review mode disable --scope clone --cwd <repo>`. |
 | `unachievable_lens_slot` | A host reported a selected reviewer slot unachievable under current conditions. If that was transient, re-run `gentle-ai review capture-unachievable` with the same binding and `--withdraw=true` so B re-offers the same slot. If it is not transient, reduce the B candidate scope and start a new `gentle-ai review start`, or run `gentle-ai review mode disable --scope clone --cwd <repo>`. |
 | `target_already_acknowledged` | Terminal: this exact target was already acknowledged and its review authority burned. No further review action is required; delivery follows ordinary repository policy. Changed targets remain eligible for review. Only when deliberately requesting a new independent review, use `gentle-ai review start`; do not automatically restart this consumed target. |
+| `acknowledged_predecessor_passive_delta` | Terminal: this committed range only adds passive content (documentation or notes) to a candidate that was already approved and acknowledged, so there is nothing new to review and no review authority was created. No further review action is required; delivery follows ordinary repository policy. Any non-passive change is offered for review again. Only when deliberately requesting a new independent review, use `gentle-ai review start`. |
 | `rdd_disabled` | Run the exact source-scoped `gentle-ai review mode enable` command rendered by STATUS, then re-run its exact repository-bound STATUS command. |
 
 ## Published v1 compatibility reference

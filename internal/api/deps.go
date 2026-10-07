@@ -107,7 +107,7 @@ func DefaultDeps(version, homeDir string) Deps {
 		},
 		NewEngine: agentbuilder.NewEngine,
 		Uninstall: func(homeDir, cwd string, agents []model.AgentID, components []model.ComponentID, engramScope model.EngramUninstallScope) (componentuninstall.Result, error) {
-			return cli.RunUninstallWithSelectionAndProfiles(homeDir, cwd, agents, components, nil, engramScope)
+			return cli.RunUninstallWithSelectionAndEngramScope(homeDir, cwd, agents, components, engramScope)
 		},
 		Executable: os.Executable,
 		RemoveFile: os.Remove,
