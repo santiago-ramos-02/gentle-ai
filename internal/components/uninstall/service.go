@@ -72,6 +72,10 @@ type Service struct {
 	// engramUninstallScope controls whether Engram cleanup removes global
 	// integration files/config (global) or project-local .engram data only.
 	engramUninstallScope model.EngramUninstallScope
+
+	// footprint plans what Gentle AI added to an agent rather than an
+	// uninstall, so it also takes out guidance an uninstall keeps.
+	footprint bool
 }
 
 type opType int
@@ -436,7 +440,7 @@ func (s *Service) buildPlan(agentIDs []model.AgentID, componentIDs []model.Compo
 					return plan{}, fmt.Errorf("plan uninstall for %q/%q: %w", agentID, componentID, err)
 				}
 			} else {
-				ops, targets = fullAgentOperations(adapter, s.homeDir)
+				ops, targets = fullAgentOperations(adapter, s.homeDir, s.footprint)
 			}
 			for _, target := range targets {
 				files, err := expandBackupTarget(target)

@@ -59,7 +59,7 @@ func AgentFootprint(homeDir string, agentIDs []model.AgentID) (Footprint, error)
 		result.Agents = append(result.Agents, string(agent))
 	}
 	components := footprintComponents()
-	real := &Service{homeDir: homeDir, workspaceDir: homeDir, registry: registry}
+	real := &Service{homeDir: homeDir, workspaceDir: homeDir, registry: registry, footprint: true}
 	realPlan, err := real.buildPlan(agentIDs, components)
 	if err != nil {
 		return Footprint{}, err
@@ -96,7 +96,7 @@ func AgentFootprint(homeDir string, agentIDs []model.AgentID) (Footprint, error)
 		}
 	}
 
-	simulated := &Service{homeDir: scratch, workspaceDir: scratch, registry: registry}
+	simulated := &Service{homeDir: scratch, workspaceDir: scratch, registry: registry, footprint: true}
 	simPlan, err := simulated.buildPlan(agentIDs, components)
 	if err != nil {
 		return Footprint{}, err

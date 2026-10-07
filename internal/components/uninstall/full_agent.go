@@ -21,10 +21,15 @@ var agentOnlySections = []string{"orchestrator", "agent-routing", "sdd-orchestra
 // outside its components: the guidance sections in its instructions file and
 // the native review and Judgment Day agents. Native agents the user changed
 // are kept, as the installer keeps them.
-func fullAgentOperations(adapter agents.Adapter, homeDir string) ([]operation, []string) {
+//
+// Uninstalling from Claude Code keeps its CLAUDE.md guidance: upstream's
+// retireClaudeGlobalModules owns that file and returns it to the monolithic
+// orchestrator. A footprint still takes the guidance out, since it describes
+// everything Gentle AI added.
+func fullAgentOperations(adapter agents.Adapter, homeDir string, footprint bool) ([]operation, []string) {
 	ops := []operation{}
 	targets := []string{}
-	if adapter.SupportsSystemPrompt() {
+	if adapter.SupportsSystemPrompt() && (footprint || adapter.Agent() != model.AgentClaudeCode) {
 		path := adapter.SystemPromptFile(homeDir)
 		targets = append(targets, path)
 		ops = append(ops, rewriteMarkdownFile(path, func(content string) (string, bool) {
