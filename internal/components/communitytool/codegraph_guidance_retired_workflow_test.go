@@ -13,7 +13,7 @@ func TestPiCodeGraphOverlayHasNoRetiredWorkflowReferences(t *testing.T) {
 	retired := regexp.MustCompile(`(?i)sdd|openspec`)
 	const body = "---\nname: worker\ntools: read, bash\n---\n\nWorker body.\n"
 	for _, injectTools := range []bool{true, false} {
-		rendered, err := renderPiChild(body, []string{"read", "bash", "mcp"}, injectTools)
+		rendered, err := renderPiChild(body, []string{"read", "bash", "codemode"}, injectTools)
 		if err != nil {
 			t.Fatal(err)
 		}

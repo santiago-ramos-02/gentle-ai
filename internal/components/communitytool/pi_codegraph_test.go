@@ -54,8 +54,8 @@ func TestPiCodeGraphReconcileInjectsOnlyCompatibleToolsAndGuidanceForEveryChild(
 		}
 	}
 	compatible, _ := os.ReadFile(result.Children[0].Target)
-	if !strings.Contains(string(compatible), "mcp") || !strings.Contains(string(compatible), piCodeGraphToolMarker) {
-		t.Fatalf("compatible child has no mcp tool block:\n%s", compatible)
+	if !strings.Contains(string(compatible), "tools: bash, codemode\n") || !strings.Contains(string(compatible), piCodeGraphToolMarker) {
+		t.Fatalf("compatible child has no codemode tool block:\n%s", compatible)
 	}
 	limited, _ := os.ReadFile(result.Children[1].Target)
 	if strings.Contains(string(limited), piCodeGraphToolMarker) {
@@ -65,6 +65,77 @@ func TestPiCodeGraphReconcileInjectsOnlyCompatibleToolsAndGuidanceForEveryChild(
 	data, _ := os.ReadFile(filepath.Join(home, ".pi", "agent", "mcp.json"))
 	if err := json.Unmarshal(data, &mcp); err != nil || !strings.Contains(string(data), "codegraph") {
 		t.Fatalf("mcp config = %s, err=%v", data, err)
+	}
+}
+
+// Earlier releases gave children the `mcp` proxy tool of the retired
+// pi-mcp-adapter. Pi drops that unknown name, so the child could not reach
+// CodeGraph; sync swaps it for codemode, which reaches Pi's built-in MCP.
+func TestPiCodeGraphReplacesRetiredAdapterProxyTool(t *testing.T) {
+	home := t.TempDir()
+	childPath := filepath.Join(home, ".pi", "agent", "agents", "worker.md")
+	writePiFile(t, childPath, "---\ntools: read, bash, mcp\n---\nwork\n")
+
+	result, err := ReconcilePiCodeGraph(PiCodeGraphOptions{HomeDir: home, Selected: true, EffectiveMCPProbe: piProbeForTest})
+	if err != nil {
+		t.Fatalf("ReconcilePiCodeGraph() error = %v", err)
+	}
+	if len(result.Children) != 1 || strings.Join(result.Children[0].Tools, ",") != "read,bash,codemode" {
+		t.Fatalf("children = %#v", result.Children)
+	}
+	if body := string(mustReadPiFile(t, childPath)); !strings.Contains(body, "tools: read, bash, codemode\n") || strings.Contains(body, "`mcp`") {
+		t.Fatalf("child still names the retired proxy tool:\n%s", body)
+	}
+}
+
+// A child an earlier release rendered still carries the managed markers. Sync
+// re-renders it while its bytes are exactly what Gentle AI wrote, and keeps a
+// copy the user edited since.
+func TestPiCodeGraphRerendersOwnedChildFromEarlierRelease(t *testing.T) {
+	home := t.TempDir()
+	agents := filepath.Join(home, ".pi", "agent", "agents")
+	before := "---\ntools: read, bash\n---\nwork\n"
+	owned, edited := filepath.Join(agents, "owned.md"), filepath.Join(agents, "edited.md")
+	writePiFile(t, owned, before)
+	writePiFile(t, edited, before)
+	if _, err := ReconcilePiCodeGraph(PiCodeGraphOptions{HomeDir: home, Selected: true, EffectiveMCPProbe: piProbeForTest}); err != nil {
+		t.Fatal(err)
+	}
+	earlier, err := renderPiChild(before, []string{"read", "bash", "mcp"}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	earlier = strings.Replace(earlier, "Call the read-only CodeGraph MCP tool `mcp__codegraph__codegraph_explore` from a `codemode` script.", "Use the Pi MCP proxy tool `mcp` for the read-only CodeGraph server.", 1)
+	manifest := readPiManifestForTest(t, home)
+	for _, path := range []string{owned, edited} {
+		record := manifest.Children[path]
+		record.After, record.AfterHash = earlier, hashPiBytes([]byte(earlier))
+		manifest.Children[path] = record
+		writePiFile(t, path, earlier)
+	}
+	encoded, _ := json.MarshalIndent(manifest, "", "  ")
+	writePiFile(t, piagent.CodeGraphPaths(home).Manifest, string(encoded)+"\n")
+	userEdit := earlier + "\nuser note\n"
+	writePiFile(t, edited, userEdit)
+
+	if _, err := ReconcilePiCodeGraph(PiCodeGraphOptions{HomeDir: home, Selected: true, EffectiveMCPProbe: piProbeForTest}); err != nil {
+		t.Fatal(err)
+	}
+	body := string(mustReadPiFile(t, owned))
+	if !strings.Contains(body, "tools: read, bash, codemode\n") || strings.Contains(body, "proxy tool `mcp`") {
+		t.Fatalf("owned child was not re-rendered:\n%s", body)
+	}
+	if got := readPiManifestForTest(t, home).Children[owned]; got.AfterHash != hashPiBytes([]byte(body)) || got.Before == nil || *got.Before != before {
+		t.Fatalf("owned record = %#v, want the new render over the original before-image", got)
+	}
+	if got := string(mustReadPiFile(t, edited)); got != userEdit {
+		t.Fatalf("edited child = %q, want the user's bytes", got)
+	}
+
+	// A second sync has nothing left to change in the owned child.
+	result, err := ReconcilePiCodeGraph(PiCodeGraphOptions{HomeDir: home, Selected: true, EffectiveMCPProbe: piProbeForTest})
+	if err != nil || slices.Contains(result.Files, owned) {
+		t.Fatalf("second sync = %#v, %v", result.Files, err)
 	}
 }
 
@@ -200,6 +271,13 @@ func TestPiChildToolsAcceptsYAMLBlockList(t *testing.T) {
 	}
 	if got, want := strings.Join(tools, ","), "read,grep,bash"; got != want {
 		t.Fatalf("piChildTools() tools = %q, want %q", got, want)
+	}
+
+	// gentle-pi splits an inline tools line on commas only, so an entry with a
+	// space stays whole and a re-render keeps the line unchanged.
+	inline := "---\ntools: *\": false, read, bash\n---\nwork\n"
+	if tools, _, _ := piChildTools(inline); strings.Join(tools, "|") != `*": false|read|bash` || replacePiChildTools(inline, tools) != inline {
+		t.Fatalf("inline tools = %q", tools)
 	}
 
 	rendered := replacePiChildTools(body, append(tools, "mcp"))

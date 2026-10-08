@@ -216,7 +216,10 @@ func ReconcilePiCodeGraph(options PiCodeGraphOptions) (result PiCodeGraphResult,
 			child.Classification, child.Reason = PiChildGuidanceOnly, "child has no explicit parseable tools"
 		} else if slices.Contains(tools, "bash") {
 			child.Classification = PiChildCompatible
-			tools = appendUnique(tools, "mcp")
+			// A child's --tools never declares MCP tools it does not name, so it
+			// reaches Pi's built-in MCP through codemode. `mcp` was the proxy tool
+			// of the retired pi-mcp-adapter; Pi drops that unknown name.
+			tools = appendUnique(slices.DeleteFunc(tools, func(tool string) bool { return tool == "mcp" }), "codemode")
 		} else {
 			child.Classification, child.Reason = PiChildGuidanceOnly, "child does not allow bash"
 		}
@@ -229,7 +232,11 @@ func ReconcilePiCodeGraph(options PiCodeGraphOptions) (result PiCodeGraphResult,
 		if renderErr != nil {
 			return result, fmt.Errorf("render Pi child %q: %w", child.Name, renderErr)
 		}
-		if strings.Contains(string(body), piCodeGraphGuidanceMarker) &&
+		// A marked child keeps its bytes unless they are exactly what Gentle AI
+		// last wrote, so a render an earlier release left behind is refreshed.
+		owned, isOwned := manifest.Children[discovered.Target]
+		unedited := isOwned && !discovered.PackageOwned && hashPiBytes(body) == owned.AfterHash
+		if !unedited && strings.Contains(string(body), piCodeGraphGuidanceMarker) &&
 			(child.Classification != PiChildCompatible || strings.Contains(string(body), piCodeGraphToolMarker)) {
 			updated = string(body)
 		}
@@ -243,7 +250,11 @@ func ReconcilePiCodeGraph(options PiCodeGraphOptions) (result PiCodeGraphResult,
 		if child.Classification == "" {
 			child.Classification = PiChildGuidanceOnly
 		}
-		if _, exists := manifest.Children[discovered.Target]; !exists {
+		if unedited && updated != string(body) {
+			owned.After, owned.AfterHash = updated, hashPiBytes([]byte(updated))
+			manifest.Children[discovered.Target] = owned
+		}
+		if !isOwned {
 			adopted := !discovered.PackageOwned && updated == string(body)
 			if adopted {
 				if captureErr := journal.capture(discovered.Target); captureErr != nil {
@@ -381,12 +392,16 @@ func piChildTools(body string) ([]string, bool, bool) {
 		if strings.HasPrefix(value, "[") != strings.HasSuffix(value, "]") {
 			return nil, false, true
 		}
-		tools := strings.FieldsFunc(strings.Trim(value, "[]"), func(r rune) bool { return r == ',' || r == ' ' })
+		// Commas only, as gentle-pi splits the line, so an entry holding a
+		// space survives a re-render.
+		var tools []string
+		for _, tool := range strings.Split(strings.Trim(value, "[]"), ",") {
+			if tool = strings.Trim(strings.TrimSpace(tool), "\"'"); tool != "" {
+				tools = append(tools, tool)
+			}
+		}
 		if len(tools) == 0 {
 			return nil, false, true
-		}
-		for i := range tools {
-			tools[i] = strings.Trim(tools[i], "\"'")
 		}
 		return tools, true, false
 	}
@@ -400,8 +415,8 @@ func renderPiChild(body string, tools []string, injectTools bool) (string, error
 		return "", err
 	}
 	if injectTools {
-		body = replacePiChildTools(body, tools)
-		body += "\n\n" + piCodeGraphToolMarker + "\nUse the Pi MCP proxy tool `mcp` for the read-only CodeGraph server.\n" + piCodeGraphEndMarker
+		body = strings.TrimRight(replacePiChildTools(body, tools), "\n")
+		body += "\n\n" + piCodeGraphToolMarker + "\nCall the read-only CodeGraph MCP tool `mcp__codegraph__codegraph_explore` from a `codemode` script.\n" + piCodeGraphEndMarker
 	}
 	return strings.TrimRight(body, "\n") + "\n\n" + piCodeGraphGuidanceMarker + "\n" + CodeGraphGuidanceMarkdown() + "\n" + piCodeGraphEndMarker + "\n", nil
 }
@@ -461,7 +476,7 @@ func verifyPiCodeGraphWithProbe(mcpPath string, children []PiCodeGraphChild, pro
 		if err != nil || !strings.Contains(string(body), piCodeGraphGuidanceMarker) {
 			return fmt.Errorf("Pi child %q lacks CodeGraph lazy-init guidance", child.Name)
 		}
-		if child.Classification == PiChildCompatible && (!strings.Contains(string(body), piCodeGraphToolMarker) || !slices.Contains(child.Tools, "bash") || !slices.Contains(child.Tools, "mcp")) {
+		if child.Classification == PiChildCompatible && (!strings.Contains(string(body), piCodeGraphToolMarker) || !slices.Contains(child.Tools, "bash") || !slices.Contains(child.Tools, "codemode")) {
 			return fmt.Errorf("Pi child %q lacks verified CodeGraph tools", child.Name)
 		}
 	}
