@@ -225,7 +225,9 @@ gentle-ai          # pick your agents, components and persona
 gentle-ai doctor   # verify — read-only, changes nothing
 ```
 
-Or set it up from **Settings > Gentle AI** in [T3 Code](https://github.com/santiago-ramos-02/t3code). Your configs are snapshotted before every write, and **Gentle-AI never installs an AI agent for you** — it configures what you already have.
+If `doctor` cannot read `state.json`, inspect the reported file and parent directory's access; for permission errors, check permissions and ownership. Keep the existing state file. For invalid JSON, restore a valid backup or repair the content while preserving your installation settings. Then re-run `gentle-ai doctor`; it never changes the file or its permissions.
+
+Then use your agent normally, or set it up from **Settings > Gentle AI** in [T3 Code](https://github.com/santiago-ramos-02/t3code). Your configs are snapshotted before every write, and **Gentle-AI never installs an AI agent for you** — it configures what you already have.
 
 To go back to the official release, install it from [Gentleman-Programming/gentle-ai](https://github.com/Gentleman-Programming/gentle-ai#get-started).
 
