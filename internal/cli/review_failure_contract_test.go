@@ -382,7 +382,7 @@ func TestNegotiatedStatusUsesRealMaintenanceLockTruth(t *testing.T) {
 	}
 	deadline := decodeReviewIntegrationFailure(t, deadlineOutput.Bytes())
 	if deadline.Code != "operation_timeout" || deadline.MutationOutcome != ReviewMutationNotStarted ||
-		deadline.RetrySafe || deadline.NextAction != "stop" {
+		!deadline.RetrySafe || deadline.NextAction != "retry" {
 		t.Fatalf("STATUS caller deadline = %#v", deadline)
 	}
 	if strings.Contains(deadlineOutput.String(), repo) {
@@ -408,9 +408,15 @@ func TestNegotiatedFacadeAggregateTimeoutPreservesMutationTruth(t *testing.T) {
 		nextAction     string
 		lineage        string
 		waitsForWorker bool
+		retrySafe      bool
 	}{
 		{
 			name: "read only", args: []string{"status", "--contract", ReviewIntegrationContractV1},
+			phase: "pre_native", mutation: ReviewMutationNotStarted,
+			replayability: reviewtransaction.ReplayabilityNotReplayable, nextAction: "retry", retrySafe: true,
+		},
+		{
+			name: "read only validate", args: []string{"validate", "--contract", ReviewIntegrationContractV1},
 			phase: "pre_native", mutation: ReviewMutationNotStarted,
 			replayability: reviewtransaction.ReplayabilityManualActionRequired, nextAction: "stop",
 		},
@@ -435,7 +441,7 @@ func TestNegotiatedFacadeAggregateTimeoutPreservesMutationTruth(t *testing.T) {
 			}
 			failure := decodeReviewIntegrationFailure(t, output.Bytes())
 			if failure.Code != "operation_timeout" || failure.Phase != tt.phase || failure.MutationOutcome != tt.mutation ||
-				failure.RetrySafe || failure.Replayability != tt.replayability || failure.NextAction != tt.nextAction || failure.LineageID != tt.lineage {
+				failure.RetrySafe != tt.retrySafe || failure.Replayability != tt.replayability || failure.NextAction != tt.nextAction || failure.LineageID != tt.lineage {
 				t.Fatalf("timeout failure = %#v", failure)
 			}
 		})

@@ -25,6 +25,10 @@ import "context"
 // ancestor with terminal consumption evidence. Only a remaining delta that
 // classifies as low risk (passive content only) qualifies.
 //
+// It runs inside STATUS's aggregate budget, so it costs a fixed number of Git
+// processes however deep the ancestry is: a worktree with no terminal facts
+// returns before any walk, and every pair's paths come from one batched diff.
+//
 // The result may only suppress a fresh review offer. Terminal consumption is
 // a deduplication fact, never authority: callers must not derive a receipt or
 // a delivery gate from it, must prefer live authority, and must offer the
@@ -39,62 +43,68 @@ func AcknowledgedPassivePredecessor(ctx context.Context, repo string, live Snaps
 		return false, err
 	}
 	builder.Repo = root
+	consumed, err := compactConsumedTargets(ctx, root)
+	if err != nil || len(consumed) == 0 {
+		return false, err
+	}
 	// The ancestry is HEAD's, so the candidate must be exactly HEAD's tree.
 	headTree, err := builder.resolveTree(ctx, "HEAD")
 	if err != nil || headTree != live.CandidateTree {
 		return false, err
 	}
-	if acknowledged, err := builder.acknowledgedCandidate(ctx, live.Projection, live.BaseTree, live.CandidateTree); err != nil || acknowledged {
-		return acknowledged, err
+	if acknowledgedCandidate(consumed, live.Projection, live.BaseTree, live.CandidateTree, live.Paths) {
+		return true, nil
 	}
 	ancestors, err := selectorlessCommittedBaseDiffAncestors(ctx, root)
 	if err != nil {
 		return false, err
 	}
-	for _, ancestor := range ancestors {
+	for index, ancestor := range ancestors {
 		if ancestor.tree == live.BaseTree {
-			return false, nil
+			ancestors = ancestors[:index]
+			break
 		}
-		acknowledged, err := builder.acknowledgedCandidate(ctx, live.Projection, live.BaseTree, ancestor.tree)
-		if err != nil {
-			return false, err
+	}
+	pairs := make([][2]string, 0, 2*len(ancestors))
+	for _, ancestor := range ancestors {
+		pairs = append(pairs, [2]string{live.BaseTree, ancestor.tree}, [2]string{ancestor.tree, live.CandidateTree})
+	}
+	paths, err := builder.changedPathsBatch(ctx, pairs)
+	if err != nil {
+		return false, err
+	}
+	for index, ancestor := range ancestors {
+		beforePaths, afterPaths := paths[2*index], paths[2*index+1]
+		if acknowledgedCandidate(consumed, live.Projection, live.BaseTree, ancestor.tree, beforePaths) {
+			return builder.passiveDelta(ctx, live, ancestor.tree, live.CandidateTree, afterPaths)
 		}
-		if acknowledged {
-			return builder.passiveDelta(ctx, live, ancestor.tree, live.CandidateTree)
-		}
-		acknowledged, err = builder.acknowledgedCandidate(ctx, live.Projection, ancestor.tree, live.CandidateTree)
-		if err != nil {
-			return false, err
-		}
-		if acknowledged {
-			return builder.passiveDelta(ctx, live, live.BaseTree, ancestor.tree)
+		if acknowledgedCandidate(consumed, live.Projection, ancestor.tree, live.CandidateTree, afterPaths) {
+			return builder.passiveDelta(ctx, live, live.BaseTree, ancestor.tree, beforePaths)
 		}
 	}
 	return false, nil
 }
 
-// acknowledgedCandidate reports whether baseTree..candidateTree carries
-// terminal consumption evidence as either content-equivalent kind.
-func (b SnapshotBuilder) acknowledgedCandidate(ctx context.Context, projection Projection, baseTree, candidateTree string) (bool, error) {
-	paths, err := b.changedPaths(ctx, baseTree, candidateTree)
-	if err != nil || len(paths) == 0 {
-		return false, err
+// acknowledgedCandidate reports whether baseTree..candidateTree, whose changed
+// paths are paths, carries terminal consumption evidence as either
+// content-equivalent kind.
+func acknowledgedCandidate(consumed map[string]bool, projection Projection, baseTree, candidateTree string, paths []string) bool {
+	if len(paths) == 0 {
+		return false
 	}
 	for _, kind := range []TargetKind{TargetBaseDiff, TargetCurrentChanges} {
-		consumed, err := CompactTargetConsumed(ctx, b.Repo, IdentityForComponents(kind, projection, baseTree, candidateTree, digestPaths(paths)))
-		if err != nil || consumed {
-			return consumed, err
+		if consumed[IdentityForComponents(kind, projection, baseTree, candidateTree, digestPaths(paths))] {
+			return true
 		}
 	}
-	return false, nil
+	return false
 }
 
 // passiveDelta reports whether fromTree..toTree, the part of the live range
 // no acknowledgement covers, adds only passive content.
-func (b SnapshotBuilder) passiveDelta(ctx context.Context, live Snapshot, fromTree, toTree string) (bool, error) {
-	deltaPaths, err := b.changedPaths(ctx, fromTree, toTree)
-	if err != nil || len(deltaPaths) == 0 {
-		return false, err
+func (b SnapshotBuilder) passiveDelta(ctx context.Context, live Snapshot, fromTree, toTree string, deltaPaths []string) (bool, error) {
+	if len(deltaPaths) == 0 {
+		return false, nil
 	}
 	delta := Snapshot{
 		Kind: TargetBaseDiff, Projection: live.Projection,

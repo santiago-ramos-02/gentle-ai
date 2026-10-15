@@ -1484,6 +1484,50 @@ func (builder SnapshotBuilder) changedPaths(ctx context.Context, baseTree, candi
 	return paths, nil
 }
 
+// changedPathsBatch is changedPaths for many tree pairs in one Git process.
+// `diff-tree --stdin --always` echoes each "base candidate" pair as a header
+// line, then that pair's NUL-terminated paths; the known header sequence is
+// what splits the stream.
+func (builder SnapshotBuilder) changedPathsBatch(ctx context.Context, pairs [][2]string) ([][]string, error) {
+	if len(pairs) == 0 {
+		return nil, nil
+	}
+	stdin := make([]byte, 0, len(pairs)*130)
+	headers := make([]string, len(pairs))
+	for index, pair := range pairs {
+		headers[index] = pair[0] + " " + pair[1] + "\n"
+		stdin = append(stdin, headers[index]...)
+	}
+	output, err := runGit(ctx, builder.Repo, nil, stdin, "diff-tree", "--stdin", "--always", "--no-commit-id", "--name-only", "-r", "-z", "--no-renames", "--ignore-submodules=none")
+	if err != nil {
+		return nil, err
+	}
+	result := make([][]string, len(pairs))
+	rest := output
+	for index, header := range headers {
+		if !bytes.HasPrefix(rest, []byte(header)) {
+			return nil, fmt.Errorf("git diff-tree --stdin output lost its place at pair %d", index)
+		}
+		rest = rest[len(header):]
+		paths := []string{}
+		for len(rest) > 0 && (index+1 == len(headers) || !bytes.HasPrefix(rest, []byte(headers[index+1]))) {
+			end := bytes.IndexByte(rest, 0)
+			if end < 0 {
+				return nil, fmt.Errorf("git diff-tree --stdin output ends inside pair %d", index)
+			}
+			logicalPath, err := normalizeLogicalPath(string(rest[:end]))
+			if err != nil {
+				return nil, err
+			}
+			paths = append(paths, logicalPath)
+			rest = rest[end+1:]
+		}
+		sort.Strings(paths)
+		result[index] = paths
+	}
+	return result, nil
+}
+
 func (builder SnapshotBuilder) rejectIgnoredIntended(ctx context.Context, intended []string) error {
 	if len(intended) == 0 {
 		return nil

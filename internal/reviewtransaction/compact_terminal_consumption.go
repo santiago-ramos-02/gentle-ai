@@ -81,3 +81,48 @@ func CompactTargetConsumed(ctx context.Context, repo, target string) (bool, erro
 	}
 	return false, err
 }
+
+// compactConsumedTargets reads every terminal fact for this exact worktree in
+// one directory pass, so a search over many candidate identities costs no Git
+// process per lookup. It returns only targets CompactTargetConsumed would
+// report consumed; evidence it cannot attribute to this worktree, including
+// another worktree's facts and unreadable files, is skipped, which can only
+// keep a review offer, never suppress one.
+func compactConsumedTargets(ctx context.Context, repo string) (map[string]bool, error) {
+	base, root, err := reviewAuthorityRoot(ctx, repo)
+	if err != nil {
+		return nil, err
+	}
+	entries, err := os.ReadDir(filepath.Join(base, "terminal-consumption", "v1"))
+	if errors.Is(err, os.ErrNotExist) {
+		return map[string]bool{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	repository := compactTerminalRepository(root)
+	consumed := map[string]bool{}
+	for _, entry := range entries {
+		if !entry.Type().IsRegular() {
+			continue
+		}
+		path := filepath.Join(base, "terminal-consumption", "v1", entry.Name())
+		info, err := entry.Info()
+		if err != nil || info.Size() > 4096 {
+			continue
+		}
+		payload, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		var fact compactTerminalConsumption
+		if json.Unmarshal(payload, &fact) != nil || fact.Schema != compactTerminalConsumptionSchema || fact.Repository != repository ||
+			!validSHA256(fact.Target) || validateLineageID(fact.Lineage) != nil || path != compactTerminalConsumptionPath(base, root, fact.Target) {
+			continue
+		}
+		if _, err := os.Lstat(filepath.Join(base, "v2", fact.Lineage)); errors.Is(err, os.ErrNotExist) {
+			consumed[fact.Target] = true
+		}
+	}
+	return consumed, nil
+}
