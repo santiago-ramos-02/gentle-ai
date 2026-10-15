@@ -118,3 +118,78 @@ func TestAcknowledgedPassivePredecessorIgnoresOtherTargetKinds(t *testing.T) {
 	}
 	requirePassivePredecessor(t, repo, live, false)
 }
+
+// acknowledgeWorkspaceCandidate records the uncommitted workspace candidate as
+// approved and burned, exactly as acknowledgement leaves it, and returns it.
+func acknowledgeWorkspaceCandidate(t *testing.T, repo string, intendedUntracked ...string) Snapshot {
+	t.Helper()
+	acknowledged, err := (SnapshotBuilder{Repo: repo}).BuildStoredSnapshot(context.Background(), Target{Kind: TargetCurrentChanges, IntendedUntracked: append([]string{}, intendedUntracked...)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	authorityBase, root, err := reviewAuthorityRoot(context.Background(), repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := CompactRecord{State: CompactState{LineageID: "review-fedcba9876543210", CurrentSnapshot: acknowledged}}
+	if err := prepareCompactTerminalConsumption(authorityBase, root, record); err != nil {
+		t.Fatal(err)
+	}
+	return acknowledged
+}
+
+func TestAcknowledgedPassivePredecessorCoversCommittedWorkspaceCandidate(t *testing.T) {
+	requireSnapshotGit(t)
+	repo := initSnapshotRepo(t)
+	baseCommit := strings.TrimSpace(gitSnapshot(t, repo, "rev-parse", "HEAD"))
+	writeSnapshotFile(t, repo, "feature.go", "package feature\n\nfunc Run() {}\n")
+	acknowledged := acknowledgeWorkspaceCandidate(t, repo, "feature.go")
+	gitSnapshot(t, repo, "add", "feature.go")
+	gitSnapshot(t, repo, "commit", "-qm", "feature")
+	live := buildCommittedRange(t, repo, baseCommit)
+	if live.BaseTree != acknowledged.BaseTree || live.CandidateTree != acknowledged.CandidateTree || live.Identity == acknowledged.Identity {
+		t.Fatalf("fixture must commit exactly the reviewed trees under a new identity: live %+v, acknowledged %+v", live, acknowledged)
+	}
+	requirePassivePredecessor(t, repo, live, true)
+	// A passive commit after the reviewed one still traces back to it.
+	commitSnapshotFile(t, repo, "odd/tasks/feature.md", "# Feature\n\n- PR opened.\n")
+	requirePassivePredecessor(t, repo, buildCommittedRange(t, repo, baseCommit), true)
+}
+
+func TestAcknowledgedPassivePredecessorOffersReviewWhenCommittedBytesDiffer(t *testing.T) {
+	requireSnapshotGit(t)
+	repo := initSnapshotRepo(t)
+	baseCommit := strings.TrimSpace(gitSnapshot(t, repo, "rev-parse", "HEAD"))
+	writeSnapshotFile(t, repo, "feature.go", "package feature\n\nfunc Run() {}\n")
+	acknowledgeWorkspaceCandidate(t, repo, "feature.go")
+	// One byte changes between the approved review and the commit.
+	writeSnapshotFile(t, repo, "feature.go", "package feature\n\nfunc Run() {}\n\n")
+	gitSnapshot(t, repo, "add", "feature.go")
+	gitSnapshot(t, repo, "commit", "-qm", "feature")
+	requirePassivePredecessor(t, repo, buildCommittedRange(t, repo, baseCommit), false)
+}
+
+func TestAcknowledgedPassivePredecessorCoversPassiveBaseBeforeReviewedWork(t *testing.T) {
+	requireSnapshotGit(t)
+	repo := initSnapshotRepo(t)
+	baseCommit := strings.TrimSpace(gitSnapshot(t, repo, "rev-parse", "HEAD"))
+	// The feature's task document lands first, then the reviewed work on top.
+	commitSnapshotFile(t, repo, "odd/tasks/feature.md", "# Feature\n\n## Specs\n")
+	writeSnapshotFile(t, repo, "feature.go", "package feature\n\nfunc Run() {}\n")
+	acknowledgeWorkspaceCandidate(t, repo, "feature.go")
+	gitSnapshot(t, repo, "add", "feature.go")
+	gitSnapshot(t, repo, "commit", "-qm", "feature")
+	requirePassivePredecessor(t, repo, buildCommittedRange(t, repo, baseCommit), true)
+}
+
+func TestAcknowledgedPassivePredecessorOffersReviewForUnreviewedCodeBeforeReviewedWork(t *testing.T) {
+	requireSnapshotGit(t)
+	repo := initSnapshotRepo(t)
+	baseCommit := strings.TrimSpace(gitSnapshot(t, repo, "rev-parse", "HEAD"))
+	commitSnapshotFile(t, repo, "helper.go", "package feature\n\nfunc helper() {}\n")
+	writeSnapshotFile(t, repo, "feature.go", "package feature\n\nfunc Run() { helper() }\n")
+	acknowledgeWorkspaceCandidate(t, repo, "feature.go")
+	gitSnapshot(t, repo, "add", "feature.go")
+	gitSnapshot(t, repo, "commit", "-qm", "feature")
+	requirePassivePredecessor(t, repo, buildCommittedRange(t, repo, baseCommit), false)
+}
