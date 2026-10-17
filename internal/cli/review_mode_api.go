@@ -12,12 +12,12 @@ func ReviewMode(ctx context.Context, cwd, operation, scope string) (ReviewModeRe
 	switch operation {
 	case "enable", "disable", "status":
 	default:
-		return ReviewModeResult{}, fmt.Errorf("unknown review mode command %q", operation)
+		return ReviewModeResult{}, fmt.Errorf("unknown review mode command %q: run `gentle-ai review mode enable`, `gentle-ai review mode disable`, or `gentle-ai review mode status`", operation)
 	}
 	switch scope {
 	case reviewModeScopeGlobal, reviewModeScopeClone:
 	default:
-		return ReviewModeResult{}, fmt.Errorf("unknown review mode scope %q", scope)
+		return ReviewModeResult{}, fmt.Errorf("unknown review mode scope %q: run `gentle-ai review mode status --scope global` or `gentle-ai review mode status --scope clone`", scope)
 	}
 	result := ReviewModeResult{Schema: ReviewModeSchema, Operation: operation, Scope: scope}
 	var err error

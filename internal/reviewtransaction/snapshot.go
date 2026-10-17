@@ -1506,14 +1506,14 @@ func (builder SnapshotBuilder) changedPathsBatch(ctx context.Context, pairs [][2
 	rest := output
 	for index, header := range headers {
 		if !bytes.HasPrefix(rest, []byte(header)) {
-			return nil, fmt.Errorf("git diff-tree --stdin output lost its place at pair %d", index)
+			return nil, fmt.Errorf("git diff-tree --stdin output lost its place at pair %d", index) // refusal:by-design operator-knowledge: Git returned malformed diff-tree output; no command repairs it, the caller degrades to its per-pair fallback
 		}
 		rest = rest[len(header):]
 		paths := []string{}
 		for len(rest) > 0 && (index+1 == len(headers) || !bytes.HasPrefix(rest, []byte(headers[index+1]))) {
 			end := bytes.IndexByte(rest, 0)
 			if end < 0 {
-				return nil, fmt.Errorf("git diff-tree --stdin output ends inside pair %d", index)
+				return nil, fmt.Errorf("git diff-tree --stdin output ends inside pair %d", index) // refusal:by-design operator-knowledge: Git returned malformed diff-tree output; no command repairs it, the caller degrades to its per-pair fallback
 			}
 			logicalPath, err := normalizeLogicalPath(string(rest[:end]))
 			if err != nil {
