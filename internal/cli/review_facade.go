@@ -618,7 +618,7 @@ func RunReview(args []string, stdout io.Writer) error {
 		}
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), reviewFacadeOperationDeadline(operation, args[1:]))
+	ctx, cancel := context.WithTimeout(reviewtransaction.WithGitMemo(context.Background()), reviewFacadeOperationDeadline(operation, args[1:]))
 	defer cancel()
 	metadata, _ := reviewIntegrationOperationByName(operation)
 	joinOnTimeout := metadata.JoinOnTimeout && reviewIntegrationOperationMutates(metadata, args[1:])

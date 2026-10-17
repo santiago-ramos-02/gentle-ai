@@ -2042,6 +2042,23 @@ func runGitCapturedRange(ctx context.Context, repo string, extraEnv []string, st
 // positive timeout replaces it, zero keeps the existing selection unchanged
 // for every other caller.
 func runGitCapturedRangeWithTimeout(ctx context.Context, repo string, extraEnv []string, stdin []byte, outputOffset, outputLimit int, isolateConfig, rejectStderr, rejectOverflow bool, timeoutOverride time.Duration, args ...string) ([]byte, int, error) {
+	memo := gitMemoFrom(ctx)
+	command, stable := gitMemoQuery(args)
+	if memo == nil || stdin != nil || !stable {
+		return runGitProcess(ctx, repo, extraEnv, stdin, outputOffset, outputLimit, isolateConfig, rejectStderr, rejectOverflow, timeoutOverride, args...)
+	}
+	key := memo.key(command, repo, extraEnv, outputOffset, outputLimit, isolateConfig, rejectStderr, rejectOverflow, args)
+	if output, total, ok := memo.load(key); ok {
+		return output, total, nil
+	}
+	output, total, err := runGitProcess(ctx, repo, extraEnv, stdin, outputOffset, outputLimit, isolateConfig, rejectStderr, rejectOverflow, timeoutOverride, args...)
+	if err == nil {
+		memo.store(key, output, total)
+	}
+	return output, total, err
+}
+
+func runGitProcess(ctx context.Context, repo string, extraEnv []string, stdin []byte, outputOffset, outputLimit int, isolateConfig, rejectStderr, rejectOverflow bool, timeoutOverride time.Duration, args ...string) ([]byte, int, error) {
 	remote := len(args) > 0 && args[0] == "ls-remote"
 	timeout := LocalGitCommandTimeout
 	if timeoutOverride > 0 {

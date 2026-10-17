@@ -557,6 +557,7 @@ func isolatedImmutableTreeGitWithAttributesFile(ctx context.Context, repo string
 	if err != nil {
 		return nil, "", func() error { return nil }, err
 	}
+	registerGitMemoIsolation(ctx, gitDir, identity.GitCommonDir)
 	cleanup := func() error { return os.RemoveAll(gitDir) }
 	fail := func(err error) ([]string, string, func() error, error) {
 		if cleanupErr := cleanup(); cleanupErr != nil {
@@ -582,16 +583,16 @@ func isolatedImmutableTreeGitWithAttributesFile(ctx context.Context, repo string
 	if err := os.WriteFile(filepath.Join(gitDir, "config"), []byte(config), 0o600); err != nil {
 		return fail(err)
 	}
+	// Fixed names inside the unique directory keep every isolation of one
+	// repository identical apart from that directory, which the operation's
+	// Git memo relies on to share their answers.
 	emptyFiles := make([]string, 0, 3)
-	for _, prefix := range []string{"git-iso-system-*", "git-iso-global-*", "git-iso-attrs-*"} {
-		file, err := os.CreateTemp(gitDir, prefix)
-		if err != nil {
+	for _, name := range []string{"git-iso-system", "git-iso-global", "git-iso-attrs"} {
+		path := filepath.Join(gitDir, name)
+		if err := os.WriteFile(path, nil, 0o600); err != nil {
 			return fail(err)
 		}
-		if err := file.Close(); err != nil {
-			return fail(err)
-		}
-		emptyFiles = append(emptyFiles, file.Name())
+		emptyFiles = append(emptyFiles, path)
 	}
 	return []string{
 		"GIT_DIR=" + gitDir,
