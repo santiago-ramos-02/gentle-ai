@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/gentleman-programming/gentle-ai/v4/internal/agents"
 	"github.com/gentleman-programming/gentle-ai/v4/internal/model"
@@ -65,7 +66,10 @@ func AgentFootprint(homeDir string, agentIDs []model.AgentID) (Footprint, error)
 		return Footprint{}, err
 	}
 
-	scratch, err := os.MkdirTemp("", "gentle-ai-footprint-*")
+	// A host that kills a run, as on a timeout, skips the deferred removal,
+	// so each run first removes scratch homes earlier runs left behind.
+	sweepStaleScratchHomes(os.TempDir(), time.Now())
+	scratch, err := os.MkdirTemp("", scratchHomePattern)
 	if err != nil {
 		return Footprint{}, fmt.Errorf("create scratch home: %w", err)
 	}
@@ -80,7 +84,9 @@ func AgentFootprint(homeDir string, agentIDs []model.AgentID) (Footprint, error)
 		}
 	}
 	for _, op := range realPlan.operations {
-		if op.typeID == opRemoveIfEmpty {
+		// Retiring SDD names the agent's whole config directory, transcripts
+		// included; the files it changes are already backup targets.
+		if op.typeID == opRemoveIfEmpty || op.typeID == opRetireSDD {
 			continue
 		}
 		if _, ok := relativeTo(homeDir, op.path); !ok {
@@ -91,7 +97,7 @@ func AgentFootprint(homeDir string, agentIDs []model.AgentID) (Footprint, error)
 	}
 	for _, target := range copyTargets {
 		rel, _ := relativeTo(homeDir, target)
-		if err := copyPath(target, filepath.Join(scratch, rel)); err != nil {
+		if err := copyIntoScratch(target, filepath.Join(scratch, rel)); err != nil {
 			return Footprint{}, fmt.Errorf("copy %q into the scratch home: %w", target, err)
 		}
 	}
@@ -113,6 +119,10 @@ func AgentFootprint(homeDir string, agentIDs []model.AgentID) (Footprint, error)
 		}
 		if _, _, err := op.apply(op.path); err != nil {
 			result.Unsimulated = append(result.Unsimulated, filepath.Join(homeDir, rel))
+			continue
+		}
+		if op.typeID == opRetireSDD {
+			// Its path is a label, not a file it changes.
 			continue
 		}
 		original := filepath.Join(homeDir, rel)
@@ -139,6 +149,32 @@ func AgentFootprint(homeDir string, agentIDs []model.AgentID) (Footprint, error)
 	result.Unsimulated = slices.Compact(result.Unsimulated)
 	slices.SortFunc(result.Rewritten, func(a, b RewrittenFile) int { return strings.Compare(a.Path, b.Path) })
 	return result, nil
+}
+
+const (
+	scratchHomePattern = "gentle-ai-footprint-*"
+	// No run lasts this long, so an older scratch home belongs to none.
+	staleScratchHomeAge = time.Hour
+)
+
+// copyIntoScratch is replaced in tests to fail a run partway.
+var copyIntoScratch = copyPath
+
+// sweepStaleScratchHomes removes scratch homes in dir older than
+// staleScratchHomeAge. It is best effort: a home it cannot remove is left
+// for the next run.
+func sweepStaleScratchHomes(dir string, now time.Time) {
+	matches, err := filepath.Glob(filepath.Join(dir, scratchHomePattern))
+	if err != nil {
+		return
+	}
+	for _, match := range matches {
+		info, err := os.Lstat(match)
+		if err != nil || !info.IsDir() || now.Sub(info.ModTime()) < staleScratchHomeAge {
+			continue
+		}
+		_ = os.RemoveAll(match)
+	}
 }
 
 // footprintComponents is every component an uninstall can remove from an
