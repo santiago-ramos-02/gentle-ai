@@ -67,16 +67,14 @@ func AddToUserPathWithResult(dir string) (UserPathAddition, error) {
 	//    escapePowerShellString replaces ' with '' (PowerShell's escape for single quotes
 	//    within single-quoted strings) to prevent injection via path names like C:\O'Brien.
 	safeDir := escapePowerShellString(dir)
-	script := fmt.Sprintf(
-		`$ErrorActionPreference = 'Stop'; `+
-			`$current = [Environment]::GetEnvironmentVariable('PATH', 'User'); `+
-			`$exists = $false; if ($current) { $exists = $current.Split(';') | Where-Object { [string]::Compare($_.Trim().Trim('"'), '%s', $true) -eq 0 } | Select-Object -First 1 }; `+
+	script := persistentUserPathScript(fmt.Sprintf(
+		`$exists = $false; if ($current) { $exists = $current.Split(';') | Where-Object { [string]::Compare($_.Trim().Trim('"'), '%s', $true) -eq 0 } | Select-Object -First 1 }; `+
 			`if (-not $exists) { `+
 			`$updated = if ($current) { '%s;' + $current } else { '%s' }; `+
-			`[Environment]::SetEnvironmentVariable('PATH', $updated, 'User'); 'changed' `+
+			`$pathKey.SetValue('Path', $updated, $kind); $pathChanged = $true; 'changed' `+
 			`} else { 'unchanged' }`,
 		safeDir, safeDir, safeDir,
-	)
+	))
 	output, err := newUserPathPowerShellRunner().Run(context.Background(), "-NoProfile", "-NonInteractive", "-Command", script)
 	if err != nil {
 		return addition, err
@@ -120,14 +118,13 @@ func RollbackUserPathAddition(dir string, addition UserPathAddition) error {
 
 func removeFromPersistentUserPath(dir string) error {
 	safeDir := escapePowerShellString(strings.Trim(strings.TrimSpace(dir), `"`))
-	script := fmt.Sprintf(
+	script := persistentUserPathScript(fmt.Sprintf(
 		`$dir = '%s'; `+
-			`$current = [Environment]::GetEnvironmentVariable('PATH', 'User'); `+
 			`$entries = @(); $removed = $false; `+
 			`if ($current) { foreach ($entry in $current.Split(';')) { if (-not $removed -and ([string]::Compare($entry.Trim().Trim('"'), $dir, $true) -eq 0)) { $removed = $true; continue }; $entries += $entry } }; `+
-			`[Environment]::SetEnvironmentVariable('PATH', ($entries -join ';'), 'User')`,
+			`if ($removed) { $pathKey.SetValue('Path', ($entries -join ';'), $kind); $pathChanged = $true }`,
 		safeDir,
-	)
+	))
 	_, err := newUserPathPowerShellRunner().Run(context.Background(), "-NoProfile", "-NonInteractive", "-Command", script)
 	return err
 }
@@ -149,16 +146,34 @@ func PrioritizeUserPath(dir string) error {
 	}
 
 	safeDir := escapePowerShellString(dir)
-	script := fmt.Sprintf(
+	script := persistentUserPathScript(fmt.Sprintf(
 		`$dir = '%s'; `+
-			`$current = [Environment]::GetEnvironmentVariable('PATH', 'User'); `+
 			`$entries = @(); `+
 			`if ($current) { $entries = $current.Split(';') | Where-Object { $_ -and ([string]::Compare($_.Trim('"'), $dir, $true) -ne 0) } }; `+
-			`[Environment]::SetEnvironmentVariable('PATH', ($dir + ';' + ($entries -join ';')).TrimEnd(';'), 'User')`,
+			`$pathKey.SetValue('Path', ($dir + ';' + ($entries -join ';')).TrimEnd(';'), $kind); $pathChanged = $true`,
 		safeDir,
-	)
+	))
 	_, err := newUserPathPowerShellRunner().Run(context.Background(), "-NoProfile", "-NonInteractive", "-Command", script)
 	return err
+}
+
+// persistentUserPathScript preserves both the raw variable references and the
+// registry value kind. Environment.GetEnvironmentVariable expands references on
+// read, and SetEnvironmentVariable writes REG_SZ regardless of the original kind.
+// Keep the environment-change notification previously sent by the .NET setter.
+func persistentUserPathScript(body string) string {
+	return `$ErrorActionPreference = 'Stop'; ` +
+		`$pathKey = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment'); ` +
+		`try { ` +
+		`$current = $pathKey.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames); ` +
+		`$kind = [Microsoft.Win32.RegistryValueKind]::ExpandString; ` +
+		`if ($pathKey.GetValueNames() -contains 'Path') { $kind = $pathKey.GetValueKind('Path') }; ` +
+		`$pathChanged = $false; ` + body +
+		` } finally { $pathKey.Close() }; ` +
+		`if ($pathChanged) { try { ` +
+		`Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class GentleAIPathNotification { [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)] public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint msg, UIntPtr wParam, string lParam, uint flags, uint timeout, out UIntPtr result); }'; ` +
+		`$result = [UIntPtr]::Zero; ` +
+		`[void][GentleAIPathNotification]::SendMessageTimeout([IntPtr]0xffff, 0x1a, [UIntPtr]::Zero, 'Environment', 2, 1000, [ref]$result) } catch { } }`
 }
 
 // UserPathEntries returns the persistent user-scoped PATH entries for the given
