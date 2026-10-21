@@ -19,6 +19,122 @@ func mustReplacePathTestScript(t *testing.T, script, anchor, replacement string)
 	return strings.ReplaceAll(script, anchor, replacement)
 }
 
+func TestPrioritizeUserPathPreservesLiteralSemantics(t *testing.T) {
+	if runtime.GOOS != "windows" || testing.Short() {
+		t.Skip("requires Windows registry and PowerShell")
+	}
+	host, err := exec.LookPath("powershell.exe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const target = `C:\GentleAI-Literal-Test\bin`
+	const other = `%GENTLE_AI_LITERAL_UNDEFINED%\tools`
+	for _, kind := range []string{"String", "ExpandString"} {
+		for _, tt := range []struct{ name, initial, want string }{
+			{"padded", " " + target + " ;" + other, target + "; " + target + " ;" + other},
+			{"quoted padded", ` "` + target + `" ;` + other, target + `; "` + target + `" ;` + other},
+			{"quoted", `"` + target + `";` + other, target + ";" + other},
+			{"already front", target + ";" + other, target + ";" + other},
+		} {
+			t.Run(kind+"/"+tt.name, func(t *testing.T) {
+				t.Setenv("PATH", `C:\GentleAI-Literal-Other`)
+				key := fmt.Sprintf(`Software\GentleAI-PathTest-%d-%d`, os.Getpid(), time.Now().UnixNano())
+				useWindowsUserPathSeam(t, userPathRunnerFunc(func(ctx context.Context, args ...string) ([]byte, error) {
+					script := mustReplacePathTestScript(t, args[len(args)-1], `CreateSubKey('Environment')`, `CreateSubKey('`+key+`')`)
+					if strings.Contains(script, `SubKey('Environment'`) {
+						t.Fatal("unsafe registry script")
+					}
+					// Count only production writes; stop notification before compilation/broadcast.
+					script = mustReplacePathTestScript(t, script, "$pathKey.SetValue", "$global:writes++; $pathKey.SetValue")
+					script = mustReplacePathTestScript(t, script, "Add-Type -TypeDefinition", "$global:notifications++; throw 'injected notification failure'; Add-Type -TypeDefinition")
+					wrapped := fmt.Sprintf(`$ErrorActionPreference = 'Stop'; $global:writes = 0; $global:notifications = 0; $fixture = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('%s'); try { $fixture.SetValue('Path', '%s', [Microsoft.Win32.RegistryValueKind]::%s); & { %s }; $actual = $fixture.GetValue('Path', $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames); if ($actual -cne '%s') { throw "raw PATH mismatch: $actual" }; if ($fixture.GetValueKind('Path').ToString() -ne '%s') { throw 'kind mismatch' }; if ($global:writes -ne 1 -or $global:notifications -ne 1) { throw "side effects: writes=$global:writes notifications=$global:notifications" } } finally { $fixture.Close(); [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree('%s') }`, key, escapePowerShellString(tt.initial), kind, script, escapePowerShellString(tt.want), kind, key)
+					cmd := exec.CommandContext(ctx, host, "-NoProfile", "-NonInteractive", "-Command", wrapped)
+					var stdout, stderr strings.Builder
+					cmd.Stdout, cmd.Stderr = &stdout, &stderr
+					err := cmd.Run()
+					if err != nil || cmd.ProcessState.ExitCode() != 0 || stdout.Len() != 0 || stderr.Len() != 0 {
+						t.Fatalf("PowerShell: error=%v exit=%d stdout=%q stderr=%q", err, cmd.ProcessState.ExitCode(), stdout.String(), stderr.String())
+					}
+					return []byte(stdout.String()), nil
+				}))
+				if err := PrioritizeUserPath(target); err != nil {
+					t.Fatal(err)
+				}
+				if got, want := os.Getenv("PATH"), target+`;C:\GentleAI-Literal-Other`; got != want {
+					t.Fatalf("process PATH = %q, want %q", got, want)
+				}
+			})
+		}
+	}
+}
+
+func TestUserPathMatchesExpandedEntries(t *testing.T) {
+	if runtime.GOOS != "windows" || testing.Short() {
+		t.Skip("requires Windows registry and PowerShell")
+	}
+	host, err := exec.LookPath("powershell.exe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const target = `C:\GentleAI-Expanded-Test\bin`
+	const entry = `%GENTLE_AI_PATH_EXPANDED_TEST%\bin`
+	const other = `%GENTLE_AI_PATH_UNDEFINED_TEST%\tools; C:\Other\bin `
+	t.Setenv("GENTLE_AI_PATH_EXPANDED_TEST", `C:\GentleAI-Expanded-Test`)
+	for _, kind := range []string{"String", "ExpandString"} {
+		for _, operation := range []string{"add", "remove", "prioritize"} {
+			t.Run(kind+"/"+operation, func(t *testing.T) {
+				t.Setenv("PATH", `C:\GentleAI-Expanded-Other`)
+				initial, want := other+";"+entry, other+";"+entry
+				if operation == "remove" {
+					want = other
+				} else if operation == "prioritize" {
+					want = entry + ";" + other
+				}
+				key := fmt.Sprintf(`Software\GentleAI-PathTest-%d-%d`, os.Getpid(), time.Now().UnixNano())
+				useWindowsUserPathSeam(t, userPathRunnerFunc(func(ctx context.Context, args ...string) ([]byte, error) {
+					script := mustReplacePathTestScript(t, args[len(args)-1], `CreateSubKey('Environment')`, `CreateSubKey('`+key+`')`)
+					if strings.Contains(script, `SubKey('Environment'`) {
+						t.Fatal("unsafe registry script")
+					}
+					if operation == "add" {
+						script = mustReplacePathTestScript(t, script, "$pathKey.SetValue", "throw 'no-op wrote'; $pathKey.SetValue")
+						script = mustReplacePathTestScript(t, script, "Add-Type -TypeDefinition", "$global:notificationInvoked = $true; throw 'notification invoked'; Add-Type -TypeDefinition")
+					}
+					wrapped := fmt.Sprintf(`$ErrorActionPreference = 'Stop'; $fixture = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('%s'); try { $fixture.SetValue('Path', '%s', [Microsoft.Win32.RegistryValueKind]::%s); & { %s }; $actual = $fixture.GetValue('Path', $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames); if ($actual -cne '%s') { throw "raw PATH mismatch: $actual" }; if ($fixture.GetValueKind('Path').ToString() -ne '%s') { throw 'kind mismatch' }; if ($global:notificationInvoked) { throw 'no-op notified' } } finally { $fixture.Close(); [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree('%s') }`, key, initial, kind, script, want, kind, key)
+					out, err := exec.CommandContext(ctx, host, "-NoProfile", "-NonInteractive", "-Command", wrapped).CombinedOutput()
+					if err != nil {
+						return out, fmt.Errorf("registry probe: %w: %s", err, out)
+					}
+					wantOutput := ""
+					if operation == "add" {
+						wantOutput = "unchanged"
+					}
+					if strings.TrimSpace(string(out)) != wantOutput {
+						t.Fatalf("output = %q, want %q", out, wantOutput)
+					}
+					return out, nil
+				}))
+				var err error
+				switch operation {
+				case "add":
+					var addition UserPathAddition
+					addition, err = AddToUserPathWithResult(target)
+					if err == nil && (addition.PersistentAdded || !addition.ProcessAdded) {
+						t.Fatalf("unexpected ownership: %+v", addition)
+					}
+				case "remove":
+					err = RemoveFromUserPath(target)
+				case "prioritize":
+					err = PrioritizeUserPath(target)
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+			})
+		}
+	}
+}
+
 func TestUserPathScriptInjectionRequiresAnchor(t *testing.T) {
 	const childFlag = "GENTLE_AI_PATH_MISSING_ANCHOR_TEST"
 	if os.Getenv(childFlag) == "1" {

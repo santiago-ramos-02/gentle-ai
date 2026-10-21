@@ -68,7 +68,7 @@ func AddToUserPathWithResult(dir string) (UserPathAddition, error) {
 	//    within single-quoted strings) to prevent injection via path names like C:\O'Brien.
 	safeDir := escapePowerShellString(dir)
 	script := persistentUserPathScript(fmt.Sprintf(
-		`$exists = $false; if ($current) { $exists = $current.Split(';') | Where-Object { [string]::Compare($_.Trim().Trim('"'), '%s', $true) -eq 0 } | Select-Object -First 1 }; `+
+		`$exists = $false; if ($current) { $exists = $current.Split(';') | Where-Object { Test-UserPathEntry ($_.Trim().Trim('"')) '%s' } | Select-Object -First 1 }; `+
 			`if (-not $exists) { `+
 			`$updated = if ($current) { '%s;' + $current } else { '%s' }; `+
 			`$pathKey.SetValue('Path', $updated, $kind); $pathChanged = $true; 'changed' `+
@@ -121,7 +121,7 @@ func removeFromPersistentUserPath(dir string) error {
 	script := persistentUserPathScript(fmt.Sprintf(
 		`$dir = '%s'; `+
 			`$entries = @(); $removed = $false; `+
-			`if ($current) { foreach ($entry in $current.Split(';')) { if (-not $removed -and ([string]::Compare($entry.Trim().Trim('"'), $dir, $true) -eq 0)) { $removed = $true; continue }; $entries += $entry } }; `+
+			`if ($current) { foreach ($entry in $current.Split(';')) { if (-not $removed -and (Test-UserPathEntry ($entry.Trim().Trim('"')) $dir)) { $removed = $true; continue }; $entries += $entry } }; `+
 			`if ($removed) { $pathKey.SetValue('Path', ($entries -join ';'), $kind); $pathChanged = $true }`,
 		safeDir,
 	))
@@ -131,7 +131,7 @@ func removeFromPersistentUserPath(dir string) error {
 
 // PrioritizeUserPath moves dir to the front of PATH for the current process and,
 // on Windows, the user-scoped persistent PATH. Existing entries are preserved;
-// only exact matches for dir are removed before the refreshed dir is prepended.
+// literal and expanded matches are removed before the preferred entry is prepended.
 func PrioritizeUserPath(dir string) error {
 	dir = strings.Trim(strings.TrimSpace(dir), `"`)
 	if dir == "" {
@@ -148,9 +148,10 @@ func PrioritizeUserPath(dir string) error {
 	safeDir := escapePowerShellString(dir)
 	script := persistentUserPathScript(fmt.Sprintf(
 		`$dir = '%s'; `+
-			`$entries = @(); `+
-			`if ($current) { $entries = $current.Split(';') | Where-Object { $_ -and ([string]::Compare($_.Trim('"'), $dir, $true) -ne 0) } }; `+
-			`$pathKey.SetValue('Path', ($dir + ';' + ($entries -join ';')).TrimEnd(';'), $kind); $pathChanged = $true`,
+			`$entries = @(); $preferred = $dir; $matched = $false; `+
+			`if ($current) { foreach ($entry in $current.Split(';')) { if (Test-UserPathEntry ($entry.Trim('"')) $dir) { if (-not $matched) { if ([string]::Compare($entry.Trim('"'), $dir, $true) -ne 0) { $preferred = $entry }; $matched = $true } } elseif ($entry) { $entries += $entry } } }; `+
+			`$updated = ($preferred + ';' + ($entries -join ';')).TrimEnd(';'); `+
+			`$pathKey.SetValue('Path', $updated, $kind); $pathChanged = $true`,
 		safeDir,
 	))
 	_, err := newUserPathPowerShellRunner().Run(context.Background(), "-NoProfile", "-NonInteractive", "-Command", script)
@@ -168,6 +169,9 @@ func persistentUserPathScript(body string) string {
 		`$current = $pathKey.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames); ` +
 		`$kind = [Microsoft.Win32.RegistryValueKind]::ExpandString; ` +
 		`if ($pathKey.GetValueNames() -contains 'Path') { $kind = $pathKey.GetValueKind('Path') }; ` +
+		// Compare expanded entries without changing the raw value used for writes.
+		`function Test-UserPathEntry([string]$literal, [string]$target) { ` +
+		`return ([string]::Compare($literal, $target, $true) -eq 0 -or [string]::Compare([Environment]::ExpandEnvironmentVariables($literal), $target, $true) -eq 0) }; ` +
 		`$pathChanged = $false; ` + body +
 		` } finally { $pathKey.Close() }; ` +
 		`if ($pathChanged) { try { ` +
