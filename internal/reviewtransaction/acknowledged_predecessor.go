@@ -21,16 +21,19 @@ import (
 //   - base..ancestor was acknowledged and ancestor..HEAD is passive;
 //   - ancestor..HEAD was acknowledged, typically the workspace candidate
 //     reviewed on top of that ancestor, and base..ancestor is passive, such as
-//     the feature's task document committed before the reviewed work.
+//     the feature's task document committed before the reviewed work. When the
+//     boundary advanced commit by commit, consecutive acknowledged ranges below
+//     the ancestor extend it down, and only the part below them must be passive.
 //
 // The walk follows HEAD's first-parent ancestry back to the candidate's base
 // tree, recomputes each candidate identity exactly, and stops at the nearest
 // ancestor with terminal consumption evidence. Only a remaining delta that
 // classifies as low risk (passive content only) qualifies.
 //
-// It runs inside STATUS's aggregate budget, so it costs a fixed number of Git
-// processes however deep the ancestry is: a worktree with no terminal facts
-// returns before any walk, and every pair's paths come from one batched diff.
+// It runs inside STATUS's aggregate budget, so its Git cost does not grow with
+// the ancestry's depth: a worktree with no terminal facts returns before any
+// walk, every pair's paths come from one batched diff, and each further
+// acknowledged range the walk chains through adds one more batched diff.
 //
 // The result may only suppress a fresh review offer. Terminal consumption is
 // a deduplication fact, never authority: callers must not derive a receipt or
@@ -92,14 +95,18 @@ func AcknowledgedBoundaryCommit(ctx context.Context, repo string, live Snapshot)
 	if err != nil || headTree != live.CandidateTree {
 		return AcknowledgedBoundary{}, false, err
 	}
-	if acknowledgedCandidate(consumed, live.Projection, live.BaseTree, live.CandidateTree, live.Paths) {
-		// The whole range was reviewed, typically as the workspace candidate
-		// before its commit: the boundary reaches the live content.
+	// The boundary reaches the live content: nothing in the range is unreviewed.
+	reachesHead := func() (AcknowledgedBoundary, bool, error) {
 		head, err := runGit(ctx, root, nil, nil, "rev-parse", "--verify", "HEAD^{commit}")
 		if err != nil {
 			return AcknowledgedBoundary{}, false, err
 		}
 		return AcknowledgedBoundary{Commit: strings.TrimSpace(string(head)), Tree: headTree, Passive: true}, true, nil
+	}
+	if acknowledgedCandidate(consumed, live.Projection, live.BaseTree, live.CandidateTree, live.Paths) {
+		// The whole range was reviewed, typically as the workspace candidate
+		// before its commit.
+		return reachesHead()
 	}
 	ancestors, err := selectorlessCommittedBaseDiffAncestors(ctx, root)
 	if err != nil {
@@ -128,6 +135,10 @@ func AcknowledgedBoundaryCommit(ctx context.Context, repo string, live Snapshot)
 				// the live content, so there is no delta to classify.
 				return boundary, true, nil
 			}
+			if acknowledgedCandidate(consumed, live.Projection, ancestor.tree, live.CandidateTree, afterPaths) {
+				// The delta was reviewed as its own range on top of this one.
+				return reachesHead()
+			}
 			boundary.Passive, err = builder.passiveDelta(ctx, live, ancestor.tree, live.CandidateTree, afterPaths)
 			if err != nil {
 				return AcknowledgedBoundary{}, false, err
@@ -135,10 +146,19 @@ func AcknowledgedBoundaryCommit(ctx context.Context, repo string, live Snapshot)
 			return boundary, true, nil
 		}
 		if acknowledgedCandidate(consumed, live.Projection, ancestor.tree, live.CandidateTree, afterPaths) {
-			// The reviewed work sits on top of the boundary, so the part no
-			// acknowledgement covers is base..boundary. Only a passive one
-			// suppresses the offer; otherwise the full range stays offered.
-			passive, err := builder.passiveDelta(ctx, live, live.BaseTree, ancestor.tree, beforePaths)
+			// The reviewed work sits on top of the boundary. Reviews that
+			// advanced the boundary commit by commit left consecutive reviewed
+			// ranges below it, so follow them down: the part no acknowledgement
+			// covers is base..bottom. Only a passive one suppresses the offer;
+			// otherwise the full range stays offered.
+			bottom, uncovered, err := builder.acknowledgedChainBottom(ctx, consumed, live, ancestors[index+1:], ancestor.tree, beforePaths)
+			if err != nil {
+				return AcknowledgedBoundary{}, false, err
+			}
+			if bottom == live.BaseTree {
+				return reachesHead()
+			}
+			passive, err := builder.passiveDelta(ctx, live, live.BaseTree, bottom, uncovered)
 			if err != nil || !passive {
 				return AcknowledgedBoundary{}, false, err
 			}
@@ -147,6 +167,37 @@ func AcknowledgedBoundaryCommit(ctx context.Context, repo string, live Snapshot)
 		}
 	}
 	return AcknowledgedBoundary{}, false, nil
+}
+
+// acknowledgedChainBottom follows consecutive acknowledged ranges down from
+// top, whose base..top paths are topPaths, through the older ancestors below
+// it. It returns the lowest tree those ranges reach and the base..bottom paths
+// no acknowledgement covers; bottom is the base tree when they cover it all.
+func (b SnapshotBuilder) acknowledgedChainBottom(ctx context.Context, consumed map[string]bool, live Snapshot, below []selectorlessCommittedBaseDiffAncestor, top string, topPaths []string) (string, []string, error) {
+	for {
+		if acknowledgedCandidate(consumed, live.Projection, live.BaseTree, top, topPaths) {
+			return live.BaseTree, nil, nil
+		}
+		pairs := make([][2]string, 0, 2*len(below))
+		for _, ancestor := range below {
+			pairs = append(pairs, [2]string{ancestor.tree, top}, [2]string{live.BaseTree, ancestor.tree})
+		}
+		paths, err := b.changedPathsBatch(ctx, pairs)
+		if err != nil {
+			return "", nil, err
+		}
+		next := -1
+		for index, ancestor := range below {
+			if acknowledgedCandidate(consumed, live.Projection, ancestor.tree, top, paths[2*index]) {
+				next = index
+				break
+			}
+		}
+		if next < 0 {
+			return top, topPaths, nil
+		}
+		top, topPaths, below = below[next].tree, paths[2*next+1], below[next+1:]
+	}
 }
 
 // acknowledgedCandidate reports whether baseTree..candidateTree, whose changed
