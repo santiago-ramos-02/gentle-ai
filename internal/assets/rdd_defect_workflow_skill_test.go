@@ -43,7 +43,7 @@ func TestRDDDefectWorkflowSkillContract(t *testing.T) {
 		"current `main`", "`status:approved`", "superseded or conflicting",
 		"causal authority invariant", "rollback boundary", "every operator flow",
 		"one truthful black-box bench journey", "actual runtime E2E proof",
-		"Synthetic proxy coverage", "CodeGraph-first", "dedicated worktree",
+		"Synthetic proxy coverage", "only when it is enabled for this host", "dedicated worktree",
 		"behavior-first tests", "source-mutating normalization", "400 additions plus deletions",
 		"independent read-only", "maintainer-owned", "unresolved_authority_decisions",
 	} {
