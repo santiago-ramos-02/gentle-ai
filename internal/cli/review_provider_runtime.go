@@ -46,15 +46,22 @@ func reviewProviderAdapter(role string, agent model.AgentID, lens ...string) (re
 	case reviewProviderRoleTargetedValidator:
 		key = "validator"
 	}
+	reviewModel := ""
 	if claude, ok := adapter.(*reviewerprovider.ClaudeAdapter); ok {
 		assignment := savedClaudeReviewAssignment(key)
 		claude.Model = assignment.Model
 		claude.Effort = assignment.Effort
+		reviewModel = string(claude.Model)
 	}
 	if codex, ok := adapter.(*reviewerprovider.CodexAdapter); ok {
 		codex.Model = savedCodexReviewModel(key)
+		reviewModel = codex.Model
 	}
-	return adapter, nil
+	reviewAgent := "review"
+	if key != "" {
+		reviewAgent = "review-" + key
+	}
+	return withReviewerActivity(adapter, reviewAgent, reviewModel), nil
 }
 
 // savedCodexReviewModel uses only explicit, syntactically valid role assignments.
