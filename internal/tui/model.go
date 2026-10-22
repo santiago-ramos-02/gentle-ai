@@ -32,6 +32,7 @@ import (
 	"github.com/gentleman-programming/gentle-ai/v4/internal/planner"
 	"github.com/gentleman-programming/gentle-ai/v4/internal/reviewtransaction"
 	"github.com/gentleman-programming/gentle-ai/v4/internal/service"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/shellinstaller"
 	"github.com/gentleman-programming/gentle-ai/v4/internal/state"
 	"github.com/gentleman-programming/gentle-ai/v4/internal/statecoord"
 	"github.com/gentleman-programming/gentle-ai/v4/internal/system"
@@ -634,12 +635,32 @@ const (
 	ScreenReviewStoreResetResult
 	// ScreenReviewMode displays and changes the global review-mode switch.
 	ScreenReviewMode
+	ScreenShellInstall
 	// ScreenPiPlugins offers optional Pi packages, such as the Claude bridge,
 	// right before the install review when Pi is being set up.
 	ScreenPiPlugins
 )
 
 type Model struct {
+	shellExperience       *shellExperienceConfig
+	shellDetected         []shellinstaller.UserShellInstall
+	shellDetectedProfiles []shellinstaller.UserExperience
+	shellDetectedCursor   int
+	shellManage           *shellManageState
+	shellUpdate           *shellUpdateState
+	shellReconfigure      string
+	shellPlan             []string
+	shellPlanConfig       *shellExperienceConfig
+	shellPlanRequest      shellinstaller.UserInstallRequest
+	shellInstallRun       *shellInstallRun
+	shellInstallEvents    <-chan shellInstallEvent
+	shellInstallRunner    func(context.Context, shellinstaller.UserInstallRequest, func(shellinstaller.UserInstallProgress)) error
+	shellReadyOffset      int
+	shellReadyCursor      int
+	shellInstallEnabled   bool
+	shellInstallModel     tea.Model
+	shellInstallSelection cli.ShellInstallSelection
+
 	openCodePresentationMajor opencode.RuntimeMajor
 	Screen                    Screen
 	PreviousScreen            Screen
@@ -1033,6 +1054,17 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.Screen == ScreenShellInstall {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			return m.updateShellInstall(msg)
+		case tea.WindowSizeMsg:
+			m.Width, m.Height = msg.Width, msg.Height
+			return m.updateShellInstall(msg)
+		case shellInstallEvent, shellInstallTick, shellUpdateResult, shellUninstallResult:
+			return m.updateShellInstall(msg)
+		}
+	}
 	switch msg := msg.(type) {
 	case openCodePresentationMsg:
 		m.openCodePresentationMajor = msg.major
@@ -1469,11 +1501,17 @@ func (m Model) View() string {
 		if m.UpdateCheckDone && update.HasUpdates(m.UpdateResults) {
 			banner = "Updates available: " + update.UpdateSummaryLine(m.UpdateResults)
 		}
-		return screens.RenderWelcomeWithAdvisory(
+		render := screens.RenderWelcomeWithAdvisory
+		if m.shellInstallEnabled {
+			render = screens.RenderShellWelcomeWithAdvisory
+		}
+		return render(
 			m.Cursor, m.Version, banner, m.UpdateResults, m.UpdateCheckDone && m.UpdateCheckState == update.CheckCompleted, m.hasAgentBuilderEngines(),
 			m.Width, m.Height,
 			screens.WelcomeAdvisory{Message: m.AdvisoryMessage, URL: m.AdvisoryURL, Scroll: m.AdvisoryScroll},
 		)
+	case ScreenShellInstall:
+		return m.shellInstallView()
 	case ScreenUpgrade:
 		return screens.RenderUpgradeWithWidth(m.UpdateResults, m.UpgradeReport, m.UpgradeErr, m.OperationRunning, m.UpdateCheckDone, m.Cursor, m.SpinnerFrame, m.Width)
 	case ScreenSync:
@@ -1997,7 +2035,26 @@ func (m Model) isModelPickerSeparatorCursor() bool {
 func (m Model) confirmSelection() (tea.Model, tea.Cmd) {
 	switch m.Screen {
 	case ScreenWelcome:
-		switch m.Cursor {
+		options := screens.WelcomeOptionsWithShellInstaller(m.UpdateResults, m.UpdateCheckDone, m.hasAgentBuilderEngines(), m.shellInstallEnabled)
+		if m.Cursor >= 0 && m.Cursor < len(options) {
+			switch options[m.Cursor] {
+			case screens.ShellInstallWelcomeOption:
+				m.shellInstallSelection = cli.ShellInstallSelection{}
+				m.beginShellExperience()
+				if m.shellInstallModel != nil {
+					m.shellInstallModel, _ = m.shellInstallModel.Update(tea.WindowSizeMsg{Width: m.Width, Height: m.Height})
+				}
+				m.setScreen(ScreenShellInstall)
+				return m, nil
+			case "Quit":
+				return m, tea.Quit
+			}
+		}
+		welcomeCursor := m.Cursor
+		if m.shellInstallEnabled {
+			welcomeCursor--
+		}
+		switch welcomeCursor {
 		case 0:
 			m.InstallFlowActive = true
 			m.setScreen(ScreenDetection)
@@ -2045,29 +2102,29 @@ func (m Model) confirmSelection() (tea.Model, tea.Cmd) {
 		default:
 			next := 6
 
-			if m.Cursor == next {
+			if welcomeCursor == next {
 				m.setScreen(ScreenBackups)
 				return m, nil
 			}
 			next++
 
-			if m.Cursor == next {
+			if welcomeCursor == next {
 				return m.startReviewStoreResetSurvey()
 			}
 			next++
 
-			if m.Cursor == next {
+			if welcomeCursor == next {
 				return m.startReviewModeLoad()
 			}
 			next++
 
-			if m.Cursor == next {
+			if welcomeCursor == next {
 				m.setScreen(ScreenUninstallMode)
 				return m, nil
 			}
 			next++
 
-			if m.Cursor == next {
+			if welcomeCursor == next {
 				m.CommunityToolsStandalone = true
 				m.CommunityToolResults = nil
 				m.CommunityToolErr = nil
@@ -2080,7 +2137,7 @@ func (m Model) confirmSelection() (tea.Model, tea.Cmd) {
 			}
 			next++
 
-			if m.Cursor == next {
+			if welcomeCursor == next {
 				return m, tea.Quit
 			}
 		}
@@ -3848,7 +3905,7 @@ func (m Model) optionCount() int {
 	}
 	switch m.Screen {
 	case ScreenWelcome:
-		return len(screens.WelcomeOptions(m.UpdateResults, m.UpdateCheckDone, m.hasAgentBuilderEngines()))
+		return len(screens.WelcomeOptionsWithShellInstaller(m.UpdateResults, m.UpdateCheckDone, m.hasAgentBuilderEngines(), m.shellInstallEnabled))
 	case ScreenUpgrade:
 		if m.UpgradeReport != nil || m.UpgradeErr != nil {
 			return 0
