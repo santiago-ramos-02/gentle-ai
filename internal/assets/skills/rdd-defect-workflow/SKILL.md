@@ -19,7 +19,7 @@ This skill guides public collaboration. It does not grant issue approval, label,
 - Require an approved issue (`status:approved`) and clean current `main` reproduction before implementation. Audit existing PRs for supersession or conflict; stop or narrow stale claims.
 - Group by causal authority invariant. Use one issue and one PR or explicit chain per independent invariant and rollback boundary. Split independent causes; never merge a superseded or conflicting authority line.
 - Inventory every operator flow claimed by the issue or PR, including entry, mode, environment, expectation, and negative controls. Require one truthful black-box bench journey per CLI or lifecycle flow, or actual runtime E2E proof when the core bench cannot represent it. Synthetic proxy coverage never proves another runtime.
-- Use CodeGraph-first impact mapping, a dedicated worktree, and behavior-first tests. Run source-mutating normalization before candidate freeze.
+- Map the impact (with CodeGraph only when it is enabled for this host), use a dedicated worktree, and write behavior-first tests. Run source-mutating normalization before candidate freeze.
 - Forecast authored changes before edits. The hard limit is 400 additions plus deletions; above it, STOP for a chain or explicit maintainer-approved exception.
 - Only when RDD is enabled, bind the review candidate identity, lineage, correction, and recovery records exactly. Keep bounded review defects in one correction transaction; ordinary repository policy decides delivery.
 - Require independent read-only candidate validation before publication. Validation cannot edit source or authority; findings require a new candidate.
@@ -38,7 +38,7 @@ This skill guides public collaboration. It does not grant issue approval, label,
 ## Execution Steps
 
 1. Check mode, approval, PR conflicts, and current-main reproduction.
-2. Name invariant and rollback; isolate the worktree; CodeGraph-map code, tests, evidence, docs, distribution, and registration.
+2. Name invariant and rollback; isolate the worktree; map code, tests, evidence, docs, distribution, and registration.
 3. Inventory flows and controls; add failing tests and the smallest correction.
 4. Normalize, enforce budget, run tests, and record each flow's exact candidate, command, scenario, and result.
 5. Freeze, validate read-only, and give the verdict, evidence, and one humane next action.
