@@ -429,7 +429,23 @@ func (inspector *PreparedCandidateInspector) Inspect(ctx context.Context, operat
 }
 
 func isGeneratedCandidatePath(logicalPath string) bool {
-	return isGeneratedGoldenPath(logicalPath) || IsDependencyLockCandidatePath(logicalPath)
+	return isGeneratedGoldenPath(logicalPath) || isGeneratedCodePath(logicalPath) || IsDependencyLockCandidatePath(logicalPath)
+}
+
+// isGeneratedCodePath recognizes the common code-generator output
+// conventions. Their hunks repeat what the reviewed generator input already
+// says and can dwarf it (one Convex _generated module is often hundreds of KB),
+// so reviewers get the metadata summary instead. Risk classification does not
+// use this predicate.
+func isGeneratedCodePath(logicalPath string) bool {
+	normalized := "/" + strings.TrimPrefix(filepath.ToSlash(logicalPath), "./")
+	if strings.Contains(normalized, "/_generated/") || strings.Contains(normalized, "/__generated__/") {
+		return true
+	}
+	base := normalized[strings.LastIndex(normalized, "/")+1:]
+	return strings.Contains(base, ".gen.") || strings.Contains(base, ".generated.") ||
+		strings.HasPrefix(base, "zz_generated.") || strings.HasSuffix(base, ".pb.go") ||
+		strings.HasSuffix(base, "_pb2.py") || strings.HasSuffix(base, "_pb2_grpc.py")
 }
 
 // IsDependencyLockCandidatePath identifies generated dependency manifests whose
