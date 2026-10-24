@@ -530,9 +530,10 @@ func TestPreparedCandidateInspectorReusesOneSetupForFourReads(t *testing.T) {
 	}
 	// 12, not 11: prepare now also runs one rename-aware numstat (-M) to
 	// build the patch operation's rename pairing (#3208), on top of its prior
-	// setup and raw-diff reads.
-	if children != 12 {
-		t.Fatalf("Git children for prepare plus four reads = %d, want 12", children)
+	// setup and raw-diff reads. 13 in the T3 fork: one batched git grep finds
+	// the changed files whose header declares them generated.
+	if children != 13 {
+		t.Fatalf("Git children for prepare plus four reads = %d, want 13", children)
 	}
 	builder := SnapshotBuilder{Repo: repo}
 	for _, inspection := range []struct {

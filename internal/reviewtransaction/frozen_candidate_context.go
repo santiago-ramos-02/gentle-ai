@@ -270,6 +270,11 @@ func (builder SnapshotBuilder) PrepareCandidateInspector(ctx context.Context, sn
 		manifest = append(manifest, entry)
 		pathObjectIDs = append(pathObjectIDs, frozenCandidatePathObjectIDs{oldObjectID: modes.oldObject, newObjectID: modes.newObject})
 	}
+	if useGeneratedSummaries {
+		if err := markGeneratedHeaders(ctx, repo, isolation, snapshot.CandidateTree, manifest); err != nil {
+			return fail(err)
+		}
+	}
 	// Rename pairing is computed exactly once for THIS inspector's own
 	// preparation, via the single canonical derivation (frozenRenamePairs)
 	// ChangedLines' rename-aware sizing also calls -- so the two can never
@@ -429,23 +434,7 @@ func (inspector *PreparedCandidateInspector) Inspect(ctx context.Context, operat
 }
 
 func isGeneratedCandidatePath(logicalPath string) bool {
-	return isGeneratedGoldenPath(logicalPath) || isGeneratedCodePath(logicalPath) || IsDependencyLockCandidatePath(logicalPath)
-}
-
-// isGeneratedCodePath recognizes the common code-generator output
-// conventions. Their hunks repeat what the reviewed generator input already
-// says and can dwarf it (one Convex _generated module is often hundreds of KB),
-// so reviewers get the metadata summary instead. Risk classification does not
-// use this predicate.
-func isGeneratedCodePath(logicalPath string) bool {
-	normalized := "/" + strings.TrimPrefix(filepath.ToSlash(logicalPath), "./")
-	if strings.Contains(normalized, "/_generated/") || strings.Contains(normalized, "/__generated__/") {
-		return true
-	}
-	base := normalized[strings.LastIndex(normalized, "/")+1:]
-	return strings.Contains(base, ".gen.") || strings.Contains(base, ".generated.") ||
-		strings.HasPrefix(base, "zz_generated.") || strings.HasSuffix(base, ".pb.go") ||
-		strings.HasSuffix(base, "_pb2.py") || strings.HasSuffix(base, "_pb2_grpc.py")
+	return isGeneratedGoldenPath(logicalPath) || isGeneratedCodePath(logicalPath) || isWorkflowLogbookPath(logicalPath) || IsDependencyLockCandidatePath(logicalPath)
 }
 
 // IsDependencyLockCandidatePath identifies generated dependency manifests whose
