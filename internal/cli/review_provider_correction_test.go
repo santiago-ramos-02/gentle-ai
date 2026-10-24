@@ -291,7 +291,7 @@ func TestProviderCaptureSkipsCorrectiveRetryAtTheRuntimeBudgetBoundary(t *testin
 	preserve := func(_ context.Context, _ int, _ error, _ []byte) string { return "preserved-clause" }
 	continuation := func() string { return "gentle-ai review status --next-transition" }
 
-	_, raw, err := reviewProviderCaptureRetry(context.Background(), adapter, reviewerprovider.NewInvocation(original), string(model.AgentClaudeCode), admit, preserve, continuation, nil)
+	_, raw, err := reviewProviderCaptureRetry(context.Background(), adapter, reviewerprovider.NewInvocation(original), string(model.AgentCodex), admit, preserve, continuation, nil)
 	var refused *reviewProviderCaptureRefusedError
 	if !errors.As(err, &refused) || !strings.Contains(err.Error(), "preserved-clause") {
 		t.Fatalf("corrective prompt one byte over the runtime cap must skip the re-invocation as a classified refusal: %v", err)
@@ -331,7 +331,7 @@ func TestProviderCaptureCorrectiveRetryRunsAtTheRuntimeBudgetCap(t *testing.T) {
 	preserve := func(_ context.Context, _ int, _ error, _ []byte) string { return "preserved-clause" }
 	continuation := func() string { return "gentle-ai review status --next-transition" }
 
-	admitted, _, err := reviewProviderCaptureRetry(context.Background(), adapter, reviewerprovider.NewInvocation(original), string(model.AgentClaudeCode), admit, preserve, continuation, nil)
+	admitted, _, err := reviewProviderCaptureRetry(context.Background(), adapter, reviewerprovider.NewInvocation(original), string(model.AgentCodex), admit, preserve, continuation, nil)
 	if err != nil || admitted != "admitted" {
 		t.Fatalf("corrective prompt at exactly the runtime cap was retried: %v", err)
 	}

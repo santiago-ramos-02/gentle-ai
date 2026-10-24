@@ -11,11 +11,19 @@ import "github.com/gentleman-programming/gentle-ai/v4/internal/model"
 // being told what it can hold, only what this product will ask it to hold.
 const ApprovedRuntimeContextBudget = 200 << 10
 
+// ClaudeRuntimeContextBudget is the cap for runtimes whose reviewers run on
+// Claude models, which hold 1M tokens. At about 300k tokens it still leaves
+// most of that window to the reviewer, and it admits a feature branch reviewed
+// as one range, which the approved cap refused for ordinary branches of a few
+// dozen commits. Pi is included because its review roles route to Claude
+// through claude-bridge; a Pi reviewer routed to a smaller model fails its
+// capture instead of being refused up front.
+const ClaudeRuntimeContextBudget = 1 << 20
+
 // RuntimeContextBudget reports the approved complete reviewer-context budget
-// for one runtime identity. Every registered runtime currently shares the
-// same approved cap; that equality is the decided policy, not a model
-// guarantee, so a future per-runtime cap specializes the registered case
-// below instead of widening it. An identity the contract does not register --
+// for one runtime identity. Runtimes whose reviewers run on Claude get
+// ClaudeRuntimeContextBudget; every other registered runtime keeps the
+// approved cap. An identity the contract does not register --
 // including the empty identity a manual, non-agent review carries -- fails
 // closed: it never receives a larger budget than a supported one, and whether
 // an unknown identity may act at all stays with the existing runtime
@@ -23,6 +31,9 @@ const ApprovedRuntimeContextBudget = 200 << 10
 // resolution), which this function does not replace.
 func RuntimeContextBudget(agent model.AgentID) int {
 	if RegisteredRuntime(agent) {
+		if agent == model.AgentClaudeCode || agent == model.AgentPi {
+			return ClaudeRuntimeContextBudget
+		}
 		return ApprovedRuntimeContextBudget
 	}
 	// Fail closed: an unknown runtime identity earns the same conservative

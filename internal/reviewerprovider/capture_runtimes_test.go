@@ -6,16 +6,26 @@ import (
 	"github.com/gentleman-programming/gentle-ai/v4/internal/model"
 )
 
-// TestRuntimeBudgetCoversEveryRegisteredRuntime pins the approved per-runtime
-// context policy to the closed runtime registry: every identity the provider
-// contract admits receives exactly the approved cap. The table exists so a
-// future per-runtime cap must specialize RuntimeContextBudget deliberately
-// instead of quietly leaving a runtime on a value nobody decided.
+// TestRuntimeBudgetCoversEveryRegisteredRuntime pins the per-runtime context
+// policy to the closed runtime registry: runtimes whose reviewers run on
+// Claude receive the Claude cap and every other identity the provider contract
+// admits receives the approved cap. The table makes a newly registered runtime
+// fail here until someone decides its cap.
 func TestRuntimeBudgetCoversEveryRegisteredRuntime(t *testing.T) {
+	want := map[string]int{
+		"claude-code": ClaudeRuntimeContextBudget,
+		"codex":       ApprovedRuntimeContextBudget,
+		"opencode":    ApprovedRuntimeContextBudget,
+		"pi":          ClaudeRuntimeContextBudget,
+	}
 	for _, identity := range RegisteredRuntimeIdentities() {
 		t.Run(identity, func(t *testing.T) {
-			if got := RuntimeContextBudget(model.AgentID(identity)); got != ApprovedRuntimeContextBudget {
-				t.Fatalf("RuntimeContextBudget(%q) = %d, want the approved %d byte runtime cap", identity, got, ApprovedRuntimeContextBudget)
+			budget, decided := want[identity]
+			if !decided {
+				t.Fatalf("runtime %q has no decided context budget", identity)
+			}
+			if got := RuntimeContextBudget(model.AgentID(identity)); got != budget {
+				t.Fatalf("RuntimeContextBudget(%q) = %d, want %d", identity, got, budget)
 			}
 		})
 	}

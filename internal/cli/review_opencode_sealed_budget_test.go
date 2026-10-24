@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/gentleman-programming/gentle-ai/v4/internal/model"
+	"github.com/gentleman-programming/gentle-ai/v4/internal/reviewerprovider"
 	"github.com/gentleman-programming/gentle-ai/v4/internal/reviewtransaction"
 )
 
@@ -144,7 +145,8 @@ func sealedBudgetSlack(t *testing.T, repo string, record reviewtransaction.Compa
 		}
 		return true
 	}
-	low, high := 0, 256<<10
+	// Padding of a whole budget overflows the block that carries it.
+	low, high := 0, reviewerprovider.RuntimeContextBudget(model.AgentID(state.RuntimeAgent))
 	if !fits(low) || fits(high) {
 		t.Fatalf("budget search bounds are not a boundary: fits(0)=%v fits(%d)=%v", fits(low), high, fits(high))
 	}

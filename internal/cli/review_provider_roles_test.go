@@ -41,7 +41,7 @@ func TestReviewProviderRolePromptBoundsTheCompletePromptAtTheRuntimeCap(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtime := string(model.AgentClaudeCode)
+	runtime := string(model.AgentCodex)
 	probe, err := reviewProviderRolePrompt(contract, runtimeBudgetRolePromptRequest(""), runtime)
 	if err != nil {
 		t.Fatal(err)
