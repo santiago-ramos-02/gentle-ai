@@ -305,11 +305,11 @@ func TestUserSupervisorPreimages(t *testing.T) {
 	if err != nil || len(before) != 64 {
 		t.Fatalf("owned physical preimage: %v", err)
 	}
-	if err := os.Chmod(path, 0770); err != nil {
+	if err := os.Chmod(path, 0777); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := userSupervisorSHA(context.Background(), path); err == nil {
-		t.Fatal("group-writable controller accepted")
+		t.Fatal("world-writable controller accepted")
 	}
 	if err := os.Chmod(path, 0700); err != nil {
 		t.Fatal(err)
@@ -331,6 +331,63 @@ func TestUserSupervisorPreimages(t *testing.T) {
 	var failure *PrivateRuntimeError
 	if !errors.As(err, &failure) || failure.Kind != "source" || failure.Cause == nil || !strings.Contains(failure.Cause.Error(), "supervisor ancestor refused") {
 		t.Fatalf("unsafe controller ancestor lost refusal cause: %v", err)
+	}
+}
+
+func TestUserSupervisorFileRefusalCauses(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Chmod(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "supervisor")
+	for _, tc := range []struct {
+		name string
+		mode os.FileMode
+		want string
+	}{
+		{"world-writable", 0707, "reason=group-or-world-writable"},
+		{"not-executable", 0600, "reason=not-executable"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := os.WriteFile(path, []byte("trusted-build DATA preimage"), tc.mode); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(path, tc.mode); err != nil {
+				t.Fatal(err)
+			}
+			_, err := userSupervisorSHA(context.Background(), path)
+			var failure *PrivateRuntimeError
+			if !errors.As(err, &failure) || failure.Kind != "source" || failure.Cause == nil || !strings.Contains(failure.Cause.Error(), tc.want) || !strings.Contains(failure.Cause.Error(), path) {
+				t.Fatalf("file refusal lost cause %q: %v", tc.want, err)
+			}
+		})
+	}
+}
+
+func TestUserSupervisorFilePrivateGroupLayout(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Chmod(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "supervisor")
+	if err := os.WriteFile(path, []byte("trusted-build DATA preimage"), 0775); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0775); err != nil {
+		t.Fatal(err)
+	}
+	_, err := userSupervisorSHA(context.Background(), path)
+	if os.Getuid() != 0 && os.Getgid() == os.Getuid() {
+		// Default `go install` output under the Debian/Ubuntu UPG scheme:
+		// 0775 binary owned by the user's own private group (#5705).
+		if err != nil {
+			t.Fatalf("private-group 0775 supervisor file refused: %v", err)
+		}
+		return
+	}
+	var failure *PrivateRuntimeError
+	if !errors.As(err, &failure) || failure.Kind != "source" || failure.Cause == nil || !strings.Contains(failure.Cause.Error(), "reason=group-or-world-writable") {
+		t.Fatalf("foreign-group 0775 supervisor file lost refusal cause: %v", err)
 	}
 }
 
@@ -661,5 +718,58 @@ func TestUserToolExclusivePhysicalReadback(t *testing.T) {
 	}
 	if _, err := privateNativeFile(context.Background(), alias, 0700, int64(len(data)), pin); err == nil {
 		t.Fatal("helper alias admitted")
+	}
+}
+
+func TestUserKernelMarker(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	receipt := filepath.Join(dir, "kernel.json")
+	t.Setenv("GENTLE_SHELL_UNIT_RECEIPT", receipt)
+	cause := errors.New(`leaf limits differ: memory.max="max"`)
+	privateMust(t, userWriteKernelMarker(cause))
+	data, err := os.ReadFile(filepath.Join(dir, userKernelMarker))
+	if err != nil || string(data) != cause.Error() {
+		t.Fatalf("kernel check marker lost the observed cause: %v %q", err, data)
+	}
+	if second := userWriteKernelMarker(cause); second == nil || !os.IsExist(second) {
+		t.Fatalf("kernel check marker replaced: %v", second)
+	}
+	if got := userKernelMarkerCause(receipt); got != cause.Error() {
+		t.Fatalf("kernel check marker cause readback differs: %q", got)
+	}
+	t.Setenv("GENTLE_SHELL_UNIT_RECEIPT", "")
+	if err := userWriteKernelMarker(cause); err != nil {
+		t.Fatalf("marker written without a delegated receipt: %v", err)
+	}
+	wrong := t.TempDir()
+	if err := os.Chmod(wrong, 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GENTLE_SHELL_UNIT_RECEIPT", filepath.Join(wrong, "other.json"))
+	if err := userWriteKernelMarker(cause); err != nil {
+		t.Fatalf("marker written with an invalid receipt name: %v", err)
+	}
+}
+
+func TestUserUnitReadbackKernelMarkerCause(t *testing.T) {
+	dir := t.TempDir()
+	cause := `leaf limits differ: memory.max="max" want 3221225472/0/"100000 100000"/64`
+	privateMust(t, os.WriteFile(filepath.Join(dir, userKernelMarker), []byte(cause), 0600))
+	err := userUnitReadback(filepath.Join(dir, "kernel.json"))
+	if err == nil || !strings.Contains(err.Error(), `memory.max="max"`) || !strings.Contains(err.Error(), "unit kernel check failed") {
+		t.Fatalf("marker cause not attached to the uncertain failure: %v", err)
+	}
+	err = userUnitReadback(filepath.Join(t.TempDir(), "kernel.json"))
+	if err == nil || !strings.Contains(err.Error(), "missing physical unit receipt; termination uncertain") {
+		t.Fatalf("generic readback wording changed: %v", err)
+	}
+}
+
+func TestUserLaunchProbeUnitCheckArgs(t *testing.T) {
+	if args := userLaunchProbeArgs(); !reflect.DeepEqual(args, []string{"internal-check"}) {
+		t.Fatalf("launch probe does not recheck the kernel inside a unit: %v", args)
 	}
 }
