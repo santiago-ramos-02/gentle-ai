@@ -21,20 +21,27 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func userKernelStatus(status string, uid int) error {
-	if uid <= 0 || runtime.GOARCH != "amd64" {
-		return privateError("unavailable", errors.New("Linux amd64 non-root user required"))
-	}
+// userKernelFields parses /proc/self/status exactly once and refuses any
+// duplicated key, so a spoofed or malformed status cannot smuggle a second
+// definition past the identity checks.
+func userKernelFields(status string) (map[string]string, error) {
 	fields := map[string]string{}
 	for _, line := range strings.Split(status, "\n") {
 		key, value, ok := strings.Cut(line, ":")
 		if ok {
 			if _, duplicate := fields[key]; duplicate {
-				return privateError("unavailable", nil)
+				return nil, privateError("unavailable", nil)
 			}
 			fields[key] = strings.TrimSpace(value)
 		}
 	}
+	return fields, nil
+}
+
+// userKernelIdentity enforces cleared capabilities, one all-own Uid row and
+// NoNewPrivs. Root with the explicit acceptance binding reuses the same
+// physical checks; nothing else is relaxed for it.
+func userKernelIdentity(fields map[string]string, uid int) error {
 	for _, key := range []string{"CapInh", "CapPrm", "CapEff", "CapAmb"} {
 		if fields[key] != "0000000000000000" {
 			return privateError("unavailable", fmt.Errorf("%s must be zero", key))
@@ -47,12 +54,54 @@ func userKernelStatus(status string, uid int) error {
 	return nil
 }
 
+func userKernelStatus(status string, uid int) error {
+	if uid <= 0 || runtime.GOARCH != "amd64" {
+		return privateError("unavailable", errors.New("Linux amd64 non-root user required"))
+	}
+	fields, err := userKernelFields(status)
+	if err != nil {
+		return err
+	}
+	return userKernelIdentity(fields, uid)
+}
+
+// userKernelStatusRoot applies the identical physical checks to a root
+// process that already carries the explicit acceptance binding. It is only
+// reachable through the entry kernel checks after RootRiskAccepted() held.
+func userKernelStatusRoot(status string) error {
+	if runtime.GOARCH != "amd64" {
+		return privateError("unavailable", errors.New("Linux amd64 non-root user required"))
+	}
+	fields, err := userKernelFields(status)
+	if err != nil {
+		return err
+	}
+	return userKernelIdentity(fields, 0)
+}
+
+// userEntryKernelStatus routes one entry kernel check: a non-root process
+// keeps the strict path; root needs the binding first and then the identical
+// physical checks.
+func userEntryKernelStatus(status string) error {
+	return userEntryKernelStatusUID(status, os.Getuid())
+}
+
+func userEntryKernelStatusUID(status string, uid int) error {
+	if uid == 0 {
+		if !RootRiskAccepted() {
+			return &RootRiskRequiredError{}
+		}
+		return userKernelStatusRoot(status)
+	}
+	return userKernelStatus(status, uid)
+}
+
 func UserKernelCheck() error {
 	status, err := os.ReadFile("/proc/self/status")
 	if err != nil {
 		return err
 	}
-	if err := userKernelStatus(string(status), os.Getuid()); err != nil {
+	if err := userEntryKernelStatus(string(status)); err != nil {
 		return err
 	}
 	return privateKernel() // Real mount, membership, cgroup2 statfs and exact leaf limits.
@@ -188,6 +237,9 @@ func userServiceWithPlan(ctx context.Context, self string, args []string, stdin 
 	}()
 	env = append(env, "GENTLE_SHELL_UNIT="+unit, "GENTLE_SHELL_UNIT_RECEIPT="+filepath.Join(receiptDir, "kernel.json"))
 	env = append(env, userProgressEnvironment(ctx)...)
+	// The unit sees only this list: forward the registry, reconfigure and
+	// Main fallback intents explicitly or the worker silently loses them.
+	env = append(env, userServiceIntentEnvironment(os.Getenv("HOME"))...)
 	cwd, err := os.Getwd()
 	if err != nil {
 		return err
@@ -338,6 +390,9 @@ func userKernelMarkerCause(receipt string) string {
 // terminate with a physical receipt. It reuses the ordinary unit argument
 // builder and, since #5713, reports the inner check failure cause.
 func RunUserLaunchProbe(ctx context.Context, self string) error {
+	if os.Getuid() == 0 {
+		return rootSystemService(ctx, self, userLaunchProbeArgs(), nil, io.Discard, io.Discard)
+	}
 	return userService(ctx, self, userLaunchProbeArgs(), nil, io.Discard, io.Discard)
 }
 
@@ -389,7 +444,14 @@ func RunUserEntry(ctx context.Context, self string, args []string, stdin io.Read
 		}
 		result, err := RunUserInstallDirect(ctx, req)
 		if err == nil {
-			_, err = fmt.Fprintf(stdout, "Installed %s; commands %s/bin/gentle-shell and %s/bin/pi\n", result.Destination, result.Destination, result.Destination)
+			if _, err = fmt.Fprintf(stdout, "Installed %s; commands %s/bin/gentle-shell and %s/bin/pi\n", result.Destination, result.Destination, result.Destination); err != nil {
+				return err
+			}
+			if result.LauncherNote != "" {
+				if _, err = fmt.Fprintf(stdout, "%s\n", result.LauncherNote); err != nil {
+					return err
+				}
+			}
 		}
 		return err
 	}
@@ -404,6 +466,14 @@ func RunUserEntry(ctx context.Context, self string, args []string, stdin io.Read
 	}
 	inner := strings.HasPrefix(args[0], "internal-")
 	if err := UserKernelCheck(); err != nil {
+		if AsRootRiskRequired(err) {
+			// The informed root refusal is final: never delegate a run the
+			// operator has not explicitly accepted.
+			if inner {
+				_ = userWriteKernelMarker(err)
+			}
+			return err
+		}
 		if inner {
 			// The unit cannot return a receipt without the kernel check passing;
 			// record the cause for the waiting outer process before returning.
@@ -411,6 +481,11 @@ func RunUserEntry(ctx context.Context, self string, args []string, stdin io.Read
 			return err
 		}
 		forward := append([]string{"internal-" + args[0]}, args[1:]...)
+		if os.Getuid() == 0 {
+			// The accepted root run delegates to the system manager; there is
+			// no user manager to inherit and none is created.
+			return rootSystemService(ctx, self, forward, stdin, stdout, stderr)
+		}
 		return userService(ctx, self, forward, stdin, stdout, stderr)
 	}
 	if err := userRecordUnit(); err != nil {
@@ -426,7 +501,14 @@ func RunUserEntry(ctx context.Context, self string, args []string, stdin io.Read
 		}
 		result, err := RunUserInstall(ctx, req)
 		if err == nil {
-			_, err = fmt.Fprintf(stdout, "Installed %s; commands %s/bin/gentle-shell and %s/bin/pi\n", result.Destination, result.Destination, result.Destination)
+			if _, err = fmt.Fprintf(stdout, "Installed %s; commands %s/bin/gentle-shell and %s/bin/pi\n", result.Destination, result.Destination, result.Destination); err != nil {
+				return err
+			}
+			if result.LauncherNote != "" {
+				if _, err = fmt.Fprintf(stdout, "%s\n", result.LauncherNote); err != nil {
+					return err
+				}
+			}
 		}
 		return err
 	case "native-coordinate":
@@ -472,7 +554,7 @@ func userDirectKernelCheck() error {
 	if err != nil {
 		return err
 	}
-	return userKernelStatus(string(status), os.Getuid())
+	return userEntryKernelStatus(string(status))
 }
 
 const userBinarySize int64 = 18559160
