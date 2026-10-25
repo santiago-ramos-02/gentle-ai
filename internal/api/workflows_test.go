@@ -16,6 +16,22 @@ import (
 	"github.com/gentleman-programming/gentle-ai/v4/internal/state"
 )
 
+// The test binary stands in for an installer command. A real `go version`
+// lets Go's telemetry uploader write into the test's HOME after the test
+// returns, which fails its TempDir cleanup.
+const (
+	toolsInstallHelperEnv    = "GENTLE_AI_TOOLS_INSTALL_HELPER"
+	toolsInstallHelperOutput = "installer output"
+)
+
+func TestToolsInstallHelperProcess(t *testing.T) {
+	if os.Getenv(toolsInstallHelperEnv) != "1" {
+		return
+	}
+	fmt.Println(toolsInstallHelperOutput)
+	os.Exit(0)
+}
+
 func TestToolsInstallStreamsOutputAndRecordsTheTools(t *testing.T) {
 	deps := testDeps(t)
 	cwd := t.TempDir()
@@ -28,16 +44,17 @@ func TestToolsInstallStreamsOutputAndRecordsTheTools(t *testing.T) {
 		if gotCwd != cwd || home != deps.HomeDir {
 			t.Errorf("install(%s) in %q with home %q", id, gotCwd, home)
 		}
-		if err := runner.Run("go", "version"); err != nil {
+		if err := runner.Run(os.Args[0], "-test.run=^TestToolsInstallHelperProcess$"); err != nil {
 			return communitytool.Result{}, err
 		}
-		return communitytool.Result{Tool: id, CommandsRun: []string{"go version"}}, nil
+		return communitytool.Result{Tool: id, CommandsRun: []string{"helper"}}, nil
 	}
+	t.Setenv(toolsInstallHelperEnv, "1")
 	lines, err := callAPI(t, deps, []string{"tools.install"}, `{"ids":["codegraph"],"cwd":`+quote(cwd)+`}`)
 	if err != nil {
 		t.Fatalf("tools.install error = %v: %v", err, lines)
 	}
-	if len(lines) != 2 || lines[0]["type"] != "log" || !strings.HasPrefix(lines[0]["message"].(string), "go version go") {
+	if len(lines) != 2 || lines[0]["type"] != "log" || lines[0]["message"] != toolsInstallHelperOutput {
 		t.Fatalf("lines = %v", lines)
 	}
 	persisted, err := state.Read(deps.HomeDir)
