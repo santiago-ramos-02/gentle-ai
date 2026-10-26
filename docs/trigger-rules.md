@@ -91,7 +91,10 @@ as a user preference. Interactive starts ask before
 reviewer work; non-interactive tier-1/tier-2 starts proceed without prompting and
 report how to disable review mode. Interactive consent is asked
 once per clone. Accepting records that choice; **not now** applies only to that
-candidate and does not change review mode.
+candidate and does not change review mode. To stop being asked in one clone, run
+`gentle-ai review consent always --cwd <repo>`: every medium- or high-risk change
+there is reviewed without the question, review mode off still wins, and
+`gentle-ai review consent ask` restores the question.
 
 While review mode is disabled, continue through direct inline or delegated direct
 routing without starting, retrying, or re-enabling review on the

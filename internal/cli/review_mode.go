@@ -853,7 +853,15 @@ func authorizeReviewStart(ctx context.Context, repo string, assessment reviewtra
 	case reviewConsentModeRelay:
 		// The caller declared it can relay a blocking question, so the typed
 		// envelope is the question. Candidate-scoped consent must not be
-		// suppressed by the legacy clone-wide console latch.
+		// suppressed by the legacy clone-wide console latch. Only the user's
+		// explicit standing grant for this clone answers it ahead of time.
+		always, err := reviewtransaction.RDDConsentAlways(ctx, repo)
+		if err != nil {
+			return err
+		}
+		if always {
+			return nil
+		}
 		return errReviewConsentQuestionRequired
 	case reviewConsentModeDeclined:
 		// An explicit relayed "no" is honored exactly like the interactive

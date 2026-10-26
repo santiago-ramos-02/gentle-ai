@@ -43,6 +43,12 @@ const (
 	// rddConsentName never matches the gen-%010d.json generation pattern, so the
 	// override head scan ignores it instead of mistaking it for a generation.
 	rddConsentName = "asked.json"
+
+	// rddConsentAlwaysSchema identifies the clone-local standing grant that lets
+	// a relayed start review medium- and high-risk candidates without asking.
+	rddConsentAlwaysSchema = "gentle-ai.rdd-consent-always/v1"
+	// rddConsentAlwaysName, like rddConsentName, never matches the generation pattern.
+	rddConsentAlwaysName = "consent-always.json"
 )
 
 var (
@@ -78,7 +84,8 @@ var (
 	// rddConsentPayload is the exact latch content. It deliberately carries no
 	// timestamp: identical bytes keep the immutable no-replace publish idempotent,
 	// so recording the same answer twice can never raise a slot conflict.
-	rddConsentPayload = []byte(`{"schema":"` + rddConsentSchema + `"}` + "\n")
+	rddConsentPayload       = []byte(`{"schema":"` + rddConsentSchema + `"}` + "\n")
+	rddConsentAlwaysPayload = []byte(`{"schema":"` + rddConsentAlwaysSchema + `"}` + "\n")
 )
 
 // RDDMode is the receipt-driven-development kill-switch value.
@@ -700,6 +707,55 @@ func RecordRDDConsentAsked(ctx context.Context, repo string) error {
 		return err
 	}
 	return publishPrivateRARImmutable(filepath.Join(dir, rddConsentName), rddConsentPayload)
+}
+
+// RDDConsentAlways reports whether the user granted every relayed review start in
+// this clone ahead of time. It shares the never-committed clone-local scope of the
+// mode override, so no other clone inherits it, and the kill switch still wins.
+func RDDConsentAlways(ctx context.Context, repo string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	dir, err := cloneLocalRDDModeRoot(ctx, repo, false)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return false, nil
+		}
+		return false, err
+	}
+	payload, err := readPrivateRARFile(filepath.Join(dir, rddConsentAlwaysName))
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return false, nil
+		}
+		return false, fmt.Errorf("%w: standing grant unreadable (%v); run `gentle-ai review consent ask` to clear it", ErrRDDConsentCorrupt, err)
+	}
+	if !bytes.Equal(payload, rddConsentAlwaysPayload) {
+		return false, fmt.Errorf("%w: unexpected standing grant content; run `gentle-ai review consent ask` to clear it", ErrRDDConsentCorrupt)
+	}
+	return true, nil
+}
+
+// SetRDDConsentAlways records or removes the clone-local standing grant.
+func SetRDDConsentAlways(ctx context.Context, repo string, always bool) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	dir, err := cloneLocalRDDModeRoot(ctx, repo, always)
+	if err != nil {
+		if !always && errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	path := filepath.Join(dir, rddConsentAlwaysName)
+	if always {
+		return publishPrivateRARImmutable(path, rddConsentAlwaysPayload)
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return SyncReviewDirectory(dir)
 }
 
 func rddModeStatus(

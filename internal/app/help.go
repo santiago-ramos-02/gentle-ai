@@ -47,6 +47,10 @@ COMMANDS
                'not now' applies to that candidate only and persists nothing, turning reviews
                off for good needs a deliberate 'gentle-ai review mode disable', and a session
                without a terminal reviews the change and says so instead of asking
+  review consent <always|ask|status> [--cwd <repo>] [--json]
+               Clone-local standing answer to that question; 'always' reviews every
+               medium- or high-risk change without asking, 'ask' (the default) restores
+               the question, and review mode off still wins
 
 COMPATIBILITY COMMANDS
   review-start --cwd <repo> --lineage <id> --policy-file <path>

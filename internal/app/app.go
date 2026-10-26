@@ -141,6 +141,9 @@ func RunArgs(args []string, stdout io.Writer) error {
 			if len(args) >= 2 && args[1] == "mode" {
 				return cli.RunReviewMode(args[2:], stdout)
 			}
+			if len(args) >= 2 && args[1] == "consent" {
+				return cli.RunReviewConsent(args[2:], stdout)
+			}
 			return cli.RunReview(args[1:], stdout)
 		case "review-start":
 			return cli.RunReviewStart(args[1:], stdout)
