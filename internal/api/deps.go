@@ -43,6 +43,7 @@ type Deps struct {
 	RunCommand func(name string, args ...string) error
 
 	ReviewMode        func(ctx context.Context, cwd, operation, scope string) (cli.ReviewModeResult, error)
+	ReviewConsent     func(ctx context.Context, cwd, operation string) (cli.ReviewConsentResult, error)
 	SurveyReviewStore func(ctx context.Context, cwd string, request reviewtransaction.StoreResetRequest) (reviewtransaction.StoreResetReport, error)
 	ResetReviewStore  func(ctx context.Context, cwd string, request reviewtransaction.StoreResetRequest) (reviewtransaction.StoreResetReport, error)
 
@@ -85,6 +86,7 @@ func DefaultDeps(version, homeDir string) Deps {
 		UninstallPlugin:     opencodeplugin.Uninstall,
 		RunCommand:          cli.RunCommand,
 		ReviewMode:          cli.ReviewMode,
+		ReviewConsent:       cli.ReviewConsentApply,
 		SurveyReviewStore:   reviewtransaction.SurveyReviewStore,
 		ResetReviewStore:    reviewtransaction.ResetReviewStore,
 		Doctor:              cli.DoctorChecks,

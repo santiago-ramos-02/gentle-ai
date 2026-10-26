@@ -28,6 +28,29 @@ type ReviewConsentResult struct {
 	Consent   ReviewConsent `json:"consent"`
 }
 
+// ReviewConsentApply runs one consent operation (always, ask, or status) for a
+// clone and returns the resulting consent; the headless API shares it.
+func ReviewConsentApply(ctx context.Context, cwd, operation string) (ReviewConsentResult, error) {
+	switch operation {
+	case "always", "ask":
+		if err := reviewtransaction.SetRDDConsentAlways(ctx, cwd, operation == "always"); err != nil {
+			return ReviewConsentResult{}, err
+		}
+	case "status":
+	default:
+		return ReviewConsentResult{}, fmt.Errorf("unknown review consent command %q; %s", operation, reviewConsentUsage)
+	}
+	always, err := reviewtransaction.RDDConsentAlways(ctx, cwd)
+	if err != nil {
+		return ReviewConsentResult{}, err
+	}
+	result := ReviewConsentResult{Schema: ReviewConsentSchema, Operation: operation, Consent: ReviewConsentAsk}
+	if always {
+		result.Consent = ReviewConsentAlways
+	}
+	return result, nil
+}
+
 const reviewConsentUsage = "Usage: gentle-ai review consent <always|ask|status> [--cwd <repo>] [--json]"
 
 // RunReviewConsent reads or sets the clone-local standing grant. It never
@@ -58,24 +81,14 @@ func RunReviewConsent(args []string, stdout io.Writer) error {
 		return fmt.Errorf("unexpected review consent argument %q", flags.Arg(0))
 	}
 
-	ctx := context.Background()
-	if operation != "status" {
-		if err := reviewtransaction.SetRDDConsentAlways(ctx, *cwd, operation == "always"); err != nil {
-			return err
-		}
-	}
-	always, err := reviewtransaction.RDDConsentAlways(ctx, *cwd)
+	result, err := ReviewConsentApply(context.Background(), *cwd, operation)
 	if err != nil {
 		return err
-	}
-	result := ReviewConsentResult{Schema: ReviewConsentSchema, Operation: operation, Consent: ReviewConsentAsk}
-	if always {
-		result.Consent = ReviewConsentAlways
 	}
 	if *emitJSON {
 		return encodeReviewJSON(stdout, result)
 	}
-	if always {
+	if result.Consent == ReviewConsentAlways {
 		_, err = fmt.Fprintln(stdout, "review consent: always (this clone reviews medium- and high-risk changes without asking)")
 	} else {
 		_, err = fmt.Fprintln(stdout, "review consent: ask (each medium- or high-risk change asks first)")

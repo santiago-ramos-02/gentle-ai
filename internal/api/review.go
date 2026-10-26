@@ -79,6 +79,41 @@ func reviewSet(ctx context.Context, env *env, params reviewSetParams) (any, erro
 	return result, nil
 }
 
+// reviewConsent reads whether this clone asks before each review. Consent is
+// clone-local, so unlike review.status it always needs the project.
+func reviewConsent(ctx context.Context, env *env, params cwdParams) (any, error) {
+	if err := requireCwd(params.Cwd); err != nil {
+		return nil, err
+	}
+	result, err := env.deps.ReviewConsent(ctx, params.Cwd, "status")
+	if err != nil {
+		return nil, errorf(CodeFailed, "%v", err)
+	}
+	return result, nil
+}
+
+type reviewConsentSetParams struct {
+	Cwd     string `json:"cwd"`
+	Consent string `json:"consent"`
+}
+
+// reviewConsentSet records ("always") or removes ("ask") the clone's standing grant.
+func reviewConsentSet(ctx context.Context, env *env, params reviewConsentSetParams) (any, error) {
+	if err := requireCwd(params.Cwd); err != nil {
+		return nil, err
+	}
+	switch params.Consent {
+	case string(cli.ReviewConsentAlways), string(cli.ReviewConsentAsk):
+	default:
+		return nil, invalidParams("consent must be always or ask, got %q", params.Consent)
+	}
+	result, err := env.deps.ReviewConsent(ctx, params.Cwd, params.Consent)
+	if err != nil {
+		return nil, errorf(CodeFailed, "%v", err)
+	}
+	return result, nil
+}
+
 func storeResult(report reviewtransaction.StoreResetReport) cli.ReviewStoreResetResult {
 	return cli.ReviewStoreResetResult{Schema: cli.ReviewStoreResetSchema, Operation: "review/store-reset", Report: report}
 }

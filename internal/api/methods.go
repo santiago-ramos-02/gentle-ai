@@ -31,6 +31,8 @@ func methods() []method {
 		{name: "plugins.uninstall", run: typed(uninstallPlugin)},
 		{name: "review.status", run: typed(reviewStatus)},
 		{name: "review.set", run: typed(reviewSet)},
+		{name: "review.consent", run: typed(reviewConsent)},
+		{name: "review.consent.set", run: typed(reviewConsentSet)},
 		{name: "reviewStore.survey", run: typed(reviewStoreSurvey)},
 		{name: "reviewStore.reset", run: typed(reviewStoreReset)},
 		{name: "tools.list", run: typed(listTools)},

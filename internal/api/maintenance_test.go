@@ -142,6 +142,39 @@ func TestRetiredOpenCodePluginsAreListedOnlyForRemoval(t *testing.T) {
 	}
 }
 
+func TestReviewConsentMethodsValidateAndForward(t *testing.T) {
+	deps := testDeps(t)
+	cwd := t.TempDir()
+	// Consent is clone-local, so both methods need the project.
+	failure(t, deps, []string{"review.consent"}, `{}`, CodeInvalidParams)
+	failure(t, deps, []string{"review.consent"}, `{"cwd":"relative/dir"}`, CodeInvalidParams)
+	failure(t, deps, []string{"review.consent.set"}, `{"consent":"always"}`, CodeInvalidParams)
+	failure(t, deps, []string{"review.consent.set"}, `{"cwd":`+quote(cwd)+`}`, CodeInvalidParams)
+	failure(t, deps, []string{"review.consent.set"}, `{"cwd":`+quote(cwd)+`,"consent":"sometimes"}`, CodeInvalidParams)
+
+	var calls []string
+	deps.ReviewConsent = func(_ context.Context, gotCwd, operation string) (cli.ReviewConsentResult, error) {
+		calls = append(calls, gotCwd+"|"+operation)
+		consent := cli.ReviewConsentAsk
+		if operation == "always" {
+			consent = cli.ReviewConsentAlways
+		}
+		return cli.ReviewConsentResult{Schema: cli.ReviewConsentSchema, Operation: operation, Consent: consent}, nil
+	}
+	status := result[cli.ReviewConsentResult](t, deps, "review.consent", `{"cwd":`+quote(cwd)+`}`)
+	always := result[cli.ReviewConsentResult](t, deps, "review.consent.set", `{"cwd":`+quote(cwd)+`,"consent":"always"}`)
+	result[cli.ReviewConsentResult](t, deps, "review.consent.set", `{"cwd":`+quote(cwd)+`,"consent":"ask"}`)
+	if status.Schema != cli.ReviewConsentSchema || status.Consent != cli.ReviewConsentAsk || always.Consent != cli.ReviewConsentAlways ||
+		!slices.Equal(calls, []string{cwd + "|status", cwd + "|always", cwd + "|ask"}) {
+		t.Fatalf("consent calls = %v, status %+v, always %+v", calls, status, always)
+	}
+
+	deps.ReviewConsent = func(context.Context, string, string) (cli.ReviewConsentResult, error) {
+		return cli.ReviewConsentResult{}, errors.New("clone-local review consent latch is corrupt")
+	}
+	failure(t, deps, []string{"review.consent"}, `{"cwd":`+quote(cwd)+`}`, CodeFailed)
+}
+
 func TestReviewMethodsValidateCwdAndMapRefusals(t *testing.T) {
 	deps := testDeps(t)
 	cwd := t.TempDir()

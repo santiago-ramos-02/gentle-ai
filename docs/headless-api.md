@@ -77,6 +77,8 @@ Field names are camelCase. Lists and objects are never `null`; an optional value
 | `builder.install` | `agent`, `engine` | Installed `files`, `renamedTo`, `warnings` |
 | `review.status` | `cwd` (optional; without it, the global setting read from home) | The `gentle-ai.review-mode/v1` report |
 | `review.set` | `enabled`, `scope`, `cwd` (needed only for `scope: clone`) | The `gentle-ai.review-mode/v1` report |
+| `review.consent` | `cwd` | The `gentle-ai.review-consent/v1` report: `consent` is `ask` or `always` for that clone |
+| `review.consent.set` | `cwd`, `consent` (`always` or `ask`) | The `gentle-ai.review-consent/v1` report after the change |
 | `reviewStore.survey` | `cwd` | The `gentle-ai.review-store-reset-result/v1` report |
 | `reviewStore.reset` | `cwd`, `includeInFlight`, `includeAdapterReviews` | The `gentle-ai.review-store-reset-result/v1` report |
 | `uninstall.plan` | `mode`, `agents`, `components`, `engramScope`, `cwd` (optional; only scopes project cleanup) | What the mode removes and whether project Engram cleanup is available |
