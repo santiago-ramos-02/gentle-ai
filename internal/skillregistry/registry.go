@@ -4,6 +4,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -227,19 +228,18 @@ func EnsureATLIgnored(cwd string) error {
 func Fingerprint(files []string) string {
 	lines := make([]string, 0, len(files)+1)
 	lines = append(lines, fmt.Sprintf("schema:%d", RegistrySchema))
+	// Content only: skill sync tools rewrite unchanged files, so mtime is not a change.
 	for _, file := range files {
-		info, err := os.Stat(file)
-		if err != nil {
+		data, err := os.ReadFile(file)
+		if errors.Is(err, os.ErrNotExist) {
 			lines = append(lines, file+":missing")
 			continue
 		}
-		data, err := os.ReadFile(file)
 		if err != nil {
 			lines = append(lines, file+":unreadable")
 			continue
 		}
-		contentSum := sha1.Sum(data)
-		lines = append(lines, fmt.Sprintf("%s:%d:%d:%x", file, info.ModTime().UnixNano(), info.Size(), contentSum))
+		lines = append(lines, fmt.Sprintf("%s:%x", file, sha1.Sum(data)))
 	}
 	sort.Strings(lines)
 	sum := sha1.Sum([]byte(strings.Join(lines, "\n")))

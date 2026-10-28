@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gentleman-programming/gentle-ai/v4/internal/agents/antigravity"
 	"github.com/gentleman-programming/gentle-ai/v4/internal/agents/trae"
@@ -108,6 +109,35 @@ func TestRegenerateContentOnlyMetadataPreservingChangeInvalidatesCache(t *testin
 	}
 	if unchanged.Regenerated || unchanged.Reason != "cache-hit" {
 		t.Fatalf("unchanged result = %#v", unchanged)
+	}
+}
+
+// Skill sync tools rewrite unchanged files; a new mtime alone must not refresh the registry.
+func TestRegenerateIdenticalRewriteKeepsCache(t *testing.T) {
+	cwd := t.TempDir()
+	home := t.TempDir()
+	skillPath := filepath.Join(cwd, "skills", "react", "SKILL.md")
+	content := "---\nname: react\ndescription: first\n---\n"
+	writeSkill(t, skillPath, content)
+	info, err := os.Stat(skillPath)
+	if err != nil {
+		t.Fatalf("stat skill: %v", err)
+	}
+	if first, err := Regenerate(cwd, home, false); err != nil || !first.Regenerated {
+		t.Fatalf("first Regenerate() = %#v, %v", first, err)
+	}
+
+	writeSkill(t, skillPath, content)
+	later := info.ModTime().Add(time.Minute)
+	if err := os.Chtimes(skillPath, later, later); err != nil {
+		t.Fatalf("advance skill timestamps: %v", err)
+	}
+	second, err := Regenerate(cwd, home, false)
+	if err != nil {
+		t.Fatalf("second Regenerate() error = %v", err)
+	}
+	if second.Regenerated || second.Reason != "cache-hit" {
+		t.Fatalf("second result = %#v", second)
 	}
 }
 
