@@ -958,7 +958,7 @@ func (r *installRuntime) stagePlan() pipeline.StagePlan {
 	if containsAgent(r.resolved.Agents, model.AgentPi) {
 		piAgentDir = piagent.AgentConfigPath(r.homeDir)
 	}
-	apply = append(apply, rollbackRestoreStep{id: "apply:rollback-restore", state: r.state, homeDir: r.homeDir, workspaceDir: r.workspaceDir, telemetryConfigDir: telemetryDir, piAgentDir: piAgentDir})
+	apply = append(apply, rollbackRestoreStep{id: "apply:rollback-restore", state: r.state, homeDir: r.homeDir, workspaceDir: r.workspaceDir, telemetryConfigDir: telemetryDir, piAgentDir: piAgentDir, codexHomeDir: codexRollbackRoot(r.homeDir, r.resolved.Agents)})
 	if telemetryDir != "" {
 		apply = append(apply, openCodeTelemetryStep{id: "opencode:telemetry-runtime", configDir: telemetryDir, state: r.state})
 	}
@@ -1266,6 +1266,7 @@ func retiredSDDAgentBackupPaths(homeDir string, scope InstallScope, adapters []a
 // retiredOpenCodeSDDTarget is one OpenCode-family settings file that may hold
 // retired SDD agents, with the shared prompt directory retired beside it.
 type retiredOpenCodeSDDTarget struct {
+	homeDir  string
 	agent    model.AgentID
 	settings string
 	prompts  string
@@ -1287,7 +1288,7 @@ func retiredOpenCodeSDDTargets(homeDir, workspaceDir string, scope InstallScope,
 			// the global markdown agents beside it.
 			config := opencodeagent.ConfigPath(homeDir)
 			target := retiredOpenCodeSDDTarget{
-				agent: agent, settings: syncOpenCodeSettingsPath(homeDir, workspaceDir, scope, opencodeagent.NewAdapter()),
+				homeDir: homeDir, agent: agent, settings: syncOpenCodeSettingsPath(homeDir, workspaceDir, scope, opencodeagent.NewAdapter()),
 				agentDirs: []string{filepath.Join(config, "agent"), filepath.Join(config, "agents")},
 			}
 			if scope != ScopeWorkspace {
@@ -1299,6 +1300,17 @@ func retiredOpenCodeSDDTargets(homeDir, workspaceDir string, scope InstallScope,
 		}
 	}
 	return targets
+}
+
+// settingsPaths includes both global spellings, whose surviving entries may
+// still reference shared prompts even when project settings are selected.
+func (t retiredOpenCodeSDDTarget) settingsPaths() []string {
+	paths := []string{t.settings}
+	if t.prompts != "" {
+		config := filepath.Dir(filepath.Dir(t.prompts))
+		paths = append(paths, filepath.Join(config, "opencode.json"), filepath.Join(config, "opencode.jsonc"))
+	}
+	return dedupPaths(paths)
 }
 
 // retiredOpenCodeSDDSettingsSteps schedules the settings retirement for every
@@ -1357,7 +1369,15 @@ func (s retiredOpenCodeSDDSettingsStep) Run() error {
 	}
 	actions := settings.ManualActions()
 	if s.target.prompts != "" {
-		prompts, err := legacyassets.RetireOpenCodeSDDPrompts(s.target.prompts)
+		var references []string
+		for _, path := range s.target.settingsPaths() {
+			refs, err := opencodeactivation.SettingsFileReferences(path, s.target.homeDir)
+			if err != nil {
+				return err
+			}
+			references = append(references, refs...)
+		}
+		prompts, err := legacyassets.RetireOpenCodeSDDPrompts(s.target.prompts, references...)
 		if s.changedFiles != nil {
 			*s.changedFiles = append(*s.changedFiles, prompts.Removed...)
 		}
@@ -2907,6 +2927,7 @@ type rollbackRestoreStep struct {
 	workspaceDir       string
 	telemetryConfigDir string // Selected adapter authority, potentially outside HOME via XDG.
 	piAgentDir         string // Selected Pi adapter authority, never derived from the manifest.
+	codexHomeDir       string // Selected Codex CODEX_HOME override, potentially outside HOME.
 }
 
 type openCodeBackgroundActivationStep struct {
@@ -2947,6 +2968,10 @@ func (s rollbackRestoreStep) Rollback() error {
 	if s.piAgentDir != "" {
 		roots = append(roots, s.piAgentDir)
 	}
+	// guard:population codex-home-rollback-root too-loose: Only the CODEX_HOME override of a selected Codex adapter extends restore roots; unselected agents, isolated homes, and the default root add nothing.
+	if s.codexHomeDir != "" {
+		roots = append(roots, s.codexHomeDir)
+	}
 	if s.telemetryConfigDir != "" {
 		roots = append(roots, s.telemetryConfigDir)
 		// The retained journals, never the generic backup, own this pair's rollback.
@@ -2967,6 +2992,16 @@ func (s rollbackRestoreStep) Rollback() error {
 		return telemetryErr
 	}
 	return errors.Join(telemetryErr, (backup.RestoreService{Roots: roots}).Restore(manifest))
+}
+
+// codexRollbackRoot returns the CODEX_HOME override a selected Codex adapter
+// writes under, or "" when no override applies. The default ~/.codex already
+// lives under the home restore root.
+func codexRollbackRoot(homeDir string, agents []model.AgentID) string {
+	if !containsAgent(agents, model.AgentCodex) || !system.CodexHomeOverridden(homeDir) {
+		return ""
+	}
+	return system.CodexConfigDir(homeDir)
 }
 
 // rollbackRoots returns the directories this install/sync run could
@@ -4369,6 +4404,13 @@ func componentPathsWithWorkspaceScoped(homeDir, workspaceDir string, scope Insta
 						filepath.Join(codexHomeDir, "engram-instructions.md"),
 						filepath.Join(codexHomeDir, "engram-compact-prompt.md"),
 					)
+					// The Engram writer still targets ~/.codex when CODEX_HOME moves config.toml.
+					if writerDir := filepath.Join(targetDir, ".codex"); writerDir != codexHomeDir {
+						paths = append(paths,
+							filepath.Join(writerDir, "engram-instructions.md"),
+							filepath.Join(writerDir, "engram-compact-prompt.md"),
+						)
+					}
 					paths = append(paths, codexagent.SddProfilePaths(codexHomeDir)...)
 				}
 			}
