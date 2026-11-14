@@ -3,6 +3,7 @@ package uninstall
 import (
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/gentleman-programming/gentle-ai/v4/internal/agents"
 	"github.com/gentleman-programming/gentle-ai/v4/internal/components/agentguidance"
@@ -24,16 +25,21 @@ var agentOnlySections = []string{"orchestrator", "agent-routing", "sdd-orchestra
 //
 // Uninstalling from Claude Code keeps its CLAUDE.md guidance: upstream's
 // retireClaudeGlobalModules owns that file and returns it to the monolithic
-// orchestrator. A footprint still takes the guidance out, since it describes
+// orchestrator. Uninstall also keeps the routing guidance upstream retains for
+// every agent. A footprint still takes the guidance out, since it describes
 // everything Gentle AI added.
 func fullAgentOperations(adapter agents.Adapter, homeDir string, footprint bool) ([]operation, []string) {
 	ops := []operation{}
 	targets := []string{}
 	if adapter.SupportsSystemPrompt() && (footprint || adapter.Agent() != model.AgentClaudeCode) {
+		sections := agentOnlySections
+		if !footprint {
+			sections = slices.DeleteFunc(slices.Clone(sections), func(name string) bool { return name == "agent-routing" })
+		}
 		path := adapter.SystemPromptFile(homeDir)
 		targets = append(targets, path)
 		ops = append(ops, rewriteMarkdownFile(path, func(content string) (string, bool) {
-			return removeMarkdownSections(content, agentOnlySections...)
+			return removeMarkdownSections(content, sections...)
 		}))
 	}
 	if dir := adapter.SubAgentsDir(homeDir); dir != "" && reviewassets.NativeAgentsSupported(adapter.Agent()) {
