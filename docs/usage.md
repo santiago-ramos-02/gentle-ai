@@ -193,11 +193,11 @@ gentle-ai skill-registry refresh --force
 gentle-ai skill-registry refresh --cwd /path/to/project --quiet
 ```
 
-The command scans project skills first (`skills/`, `.opencode/skills/`, `.claude/skills/`, `.github/skills/`, and other supported workspace skill roots), then global agent skill directories. Project-local skills win over same-name global skills.
+The command scans project skills first (`skills/`, `.opencode/skills/`, `.claude/skills/`, `.trae/skills/`, and other supported workspace roots), then global agent skill directories. Project-local skills win over same-name global skills; `list` shows the same disk winners without writing.
 
-The command writes `.atl/skill-registry.md` and `.atl/.skill-registry.cache.json`. The cache fingerprint includes schema version plus each discovered `SKILL.md` file path, mtime, and size, so normal startup is a cheap cache-hit when skills have not changed.
+Every refresh rescans disk and compares the rendered bytes with `.atl/skill-registry.md`; even `--force` leaves identical bytes untouched. The adjacent `.atl/.skill-registry.cache.json` is a repairable SHA-256 hint, not authority to skip the scan. `--quiet` suppresses output, `--no-gitignore` leaves `.gitignore` alone, and the project-root guard still applies.
 
-Codex, Claude Code, and OpenCode installs wire this command into startup/plugin hooks. Pi gets the equivalent behavior from `gentle-pi`; keep those hook/plugin scan roots in sync when changing these discovery rules.
+Codex, Claude Code, and OpenCode installs wire this command into startup/plugin hooks. Upgraded Pi and Gentle AI share the disk index for the same project, home, and `CODEX_HOME`; Pi adds session-only runtime skills to its own effective view, not the file. Upgrade both writers before expecting convergence: older binaries or different homes can produce different indexes.
 
 See [Skill Registry](skill-registry.md) for the full index-first flow and diagrams.
 
@@ -238,6 +238,8 @@ gentle-ai sync --agent openclaw
 ```
 
 Sync is safe and idempotent — running it twice produces no changes the second time. When files change, the summary reports the changed file count and lists the changed file paths.
+
+For Codex, user-global install and sync keep the always-loaded core in `~/.codex/AGENTS.md` and place the referenced on-demand orchestrator modules under `~/.codex/gentle-ai/orchestrator/`. This is the default global layout; there is no extra flag. Workspace-scoped Codex guidance remains one monolithic `<workspace>/.codex/AGENTS.md`. See [Codex orchestrator modules](rollback.md#codex-orchestrator-modules) for ownership and rollback behavior.
 
 OpenCode sync keeps retired SDD prompt files while remaining settings entries still reference them, including customized agents. It validates `{file:...}` references in the selected settings document and, for global sync, both global `opencode.json` and `opencode.jsonc` files. Relative paths resolve beside their settings document; `~/` resolves under your home directory. An empty `{file:}` stays literal text, not a file reference. Windows UNC, device-namespace (`\\.\`, `\\?\`), and NT object-manager (`\??\`) paths are rejected before their targets are inspected. A missing target or rejected reference fails sync and rolls back its managed changes. Restore the named file or correct its reference, then rerun `gentle-ai sync --agent opencode`.
 
@@ -283,7 +285,7 @@ If no `--component` flag is provided for a partial uninstall, `gentle-ai` remove
 
 An uninstall that removes every component of an agent (`--all`, or no `--component` flag) also retires what releases before v4.0.0 installed for the retired SDD workflow, with the same ownership proof as install and sync (see [Components](components.md)): `sdd-*` skills, commands, native agents, Codex profiles, the Kimi module, OpenCode and Kilocode agent entries and prompts, the Claude Code preflight hook, and the `<!-- gentle-ai:sdd-orchestrator -->` block of the agent's prompt files, including its active prompt, since uninstall delivers no routing guidance that would migrate it. Files whose bytes no release wrote are kept and reported: move or delete them yourself. A directory that is a symlink is never entered, Pi files are never touched, and everything uninstall changes is in its backup snapshot.
 
-A complete Claude Code uninstall also retires the optional orchestrator modules pilot and keeps module files Gentle AI does not own; see [Claude Code orchestrator modules](rollback.md#claude-code-orchestrator-modules-pilot).
+A complete Claude Code uninstall retires the optional orchestrator modules pilot. A complete Codex uninstall retires its default global modules. Both keep module files Gentle AI does not own; component-only uninstall preserves the module layout. See [Claude Code orchestrator modules](rollback.md#claude-code-orchestrator-modules-pilot) and [Codex orchestrator modules](rollback.md#codex-orchestrator-modules).
 
 ### update / upgrade
 
@@ -413,6 +415,7 @@ gentle-ai -v
 | `--pi-exclude-package`        | Managed Pi package sources to skip during the `pi` install (comma-separated, repeatable), for example `npm:gentle-pi`. Allowed: `npm:gentle-pi`, `npm:pi-web-access`, `npm:pi-btw`; `npm:gentle-engram` cannot be excluded. Requires the `pi` agent. Also settable via `GENTLE_AI_PI_EXCLUDE_PACKAGES`; not saved in state, and an already-installed package is not removed. |
 | `--claude-orchestrator-modules` | Global Claude Code only: install the orchestrator as an always-loaded core plus on-demand modules in `~/.claude/gentle-ai/orchestrator/`. Off by default; rejected with `--scope workspace` or without `claude-code` in the selection. Sync, uninstall and restore limits: [Claude Code orchestrator modules](rollback.md#claude-code-orchestrator-modules-pilot). |
 | `--dry-run`                   | Preview the install plan without applying changes                                                                 |
+| `--force-community-tools`     | Force community tools (currently CodeGraph) to reinstall at `@latest` and re-run the reconcile, even when the installed CLI is current. Nothing is uninstalled first. Requires CodeGraph in the selection. |
 
 ### Isolated installs
 

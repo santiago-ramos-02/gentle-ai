@@ -90,9 +90,13 @@ var (
 	goEnv                        = defaultGoEnv
 	installCommunityTool         = communitytool.Install
 	installCommunityToolWithHome = communitytool.InstallWithHome
-	injectInstallPersona         = defaultInjectInstallPersona
-	injectSyncPersona            = defaultInjectSyncPersona
-	pathEnvEntries               = func(profile system.PlatformProfile) []string {
+	// installCommunityToolWithOptions carries the --force-community-tools
+	// opt-in down into the installer. The unforced seam above stays in place so
+	// every caller that never forces keeps its existing behaviour.
+	installCommunityToolWithOptions = communitytool.InstallWithOptions
+	injectInstallPersona            = defaultInjectInstallPersona
+	injectSyncPersona               = defaultInjectSyncPersona
+	pathEnvEntries                  = func(profile system.PlatformProfile) []string {
 		return splitPathForOS(os.Getenv("PATH"), profile.OS)
 	}
 	addUserPath          = system.AddToUserPath
@@ -278,6 +282,10 @@ func RunPreparedInstall(prepared PreparedInstall, detection system.DetectionResu
 	if err != nil {
 		return result, err
 	}
+	// --force-community-tools is a CLI opt-in: it must reach the community-tool
+	// step through the runtime so the installer re-runs @latest instead of
+	// taking the reconcile short-circuit.
+	runtime.forceCommunityTools = flags.ForceCommunityTools
 	defer runtime.state.cleanupCompatibilityTransaction()
 	defer runtime.state.cleanupRollbackSnapshot()
 
@@ -792,6 +800,11 @@ type installRuntime struct {
 	// user-global Claude module pilot. stagePlan hands it to both the backup
 	// planner and the routing step, so it must be set before the plan is built.
 	claudeOrchestratorModules bool
+
+	// forceCommunityTools is the --force-community-tools opt-in. stagePlan
+	// hands it to every community-tool step so the installer reinstalls the
+	// tool at @latest even when the installed CLI is current and reconciled.
+	forceCommunityTools bool
 }
 
 type runtimeState struct {
@@ -1056,7 +1069,7 @@ func (r *installRuntime) stagePlan() pipeline.StagePlan {
 	// persona replaces whole prompt files for some agents, so CodeGraph guidance
 	// injected before it would be dropped and re-added by the first sync.
 	for _, tool := range r.selection.CommunityTools {
-		apply = append(apply, communityToolInstallStep{id: "community-tool:" + string(tool), tool: tool, workspaceDir: r.workspaceDir, homeDir: r.homeDir, agents: r.resolved.Agents, state: r.state})
+		apply = append(apply, communityToolInstallStep{id: "community-tool:" + string(tool), tool: tool, workspaceDir: r.workspaceDir, homeDir: r.homeDir, agents: r.resolved.Agents, state: r.state, forceCommunityTools: r.forceCommunityTools})
 	}
 
 	// After every prompt writer, including community-tool guidance.
@@ -2963,7 +2976,11 @@ func (s rollbackRestoreStep) Rollback() error {
 	defer s.state.cleanupRollbackSnapshot()
 	manifest := s.state.manifest
 	var telemetryErr error
-	roots := rollbackRoots(s.homeDir, s.workspaceDir)
+	targets := make([]string, 0, len(manifest.Entries))
+	for _, entry := range manifest.Entries {
+		targets = append(targets, entry.OriginalPath)
+	}
+	roots := rollbackRoots(s.homeDir, s.workspaceDir, targets)
 	// guard:population pi-rollback-agent-root too-loose: Only the selected adapter directory extends restore roots; sibling and symlink escapes remain refused.
 	if s.piAgentDir != "" {
 		roots = append(roots, s.piAgentDir)
@@ -3016,12 +3033,17 @@ func codexRollbackRoot(homeDir string, agents []model.AgentID) string {
 // Both values are exactly what backupTargets/syncBackupTargets used to
 // compute what this run actually snapshotted, so allowing rollback to
 // write within them is not wider than what this run could already do.
-func rollbackRoots(homeDir, workspaceDir string) []string {
+//
+// The product config directories this run's snapshot targets live under
+// (%APPDATA%\gga redirected outside the profile, issue #6030) come from
+// backup.WithConfigRoots, shared with the uninstall and standalone restores;
+// the targets only select which of those process-derived directories apply.
+func rollbackRoots(homeDir, workspaceDir string, targets []string) []string {
 	roots := []string{homeDir}
 	if workspaceDir != "" && workspaceDir != homeDir {
 		roots = append(roots, workspaceDir)
 	}
-	return roots
+	return backup.WithConfigRoots(roots, homeDir, targets)
 }
 
 type agentInstallStep struct {
@@ -3209,18 +3231,19 @@ type componentApplyStep struct {
 }
 
 type communityToolInstallStep struct {
-	id           string
-	tool         model.CommunityToolID
-	workspaceDir string
-	homeDir      string
-	agents       []model.AgentID
-	state        *runtimeState
+	id                  string
+	tool                model.CommunityToolID
+	workspaceDir        string
+	homeDir             string
+	agents              []model.AgentID
+	state               *runtimeState
+	forceCommunityTools bool
 }
 
 func (s communityToolInstallStep) ID() string { return s.id }
 
 func (s communityToolInstallStep) Run() error {
-	result, err := installCommunityToolWithHome(s.tool, s.workspaceDir, s.homeDir, communitytool.RunnerFunc(runCommand), communitytool.DetectorFunc(cmdLookPath))
+	result, err := s.install()
 	if err != nil {
 		return fmt.Errorf("install community tool %q: %w", s.tool, err)
 	}
@@ -3228,6 +3251,18 @@ func (s communityToolInstallStep) Run() error {
 		s.state.piCodeGraph = result.PiCodeGraph
 	}
 	return nil
+}
+
+// install keeps the unforced installer seam for every run that did not ask for
+// --force-community-tools and only routes through the options seam when the
+// flag is set.
+func (s communityToolInstallStep) install() (communitytool.Result, error) {
+	runner := communitytool.RunnerFunc(runCommand)
+	detector := communitytool.DetectorFunc(cmdLookPath)
+	if s.forceCommunityTools {
+		return installCommunityToolWithOptions(s.tool, s.workspaceDir, communitytool.InstallOptions{HomeDir: s.homeDir, ForceCommunityTools: true}, runner, detector)
+	}
+	return installCommunityToolWithHome(s.tool, s.workspaceDir, s.homeDir, runner, detector)
 }
 
 func (s componentApplyStep) ID() string {
@@ -4317,7 +4352,8 @@ func routingGuidancePaths(homeDir, workspaceDir string, scope InstallScope, adap
 }
 
 // routingGuidancePathsWithClaudeModules also takes install's explicit Claude
-// module opt-in, which the routing step receives too.
+// module opt-in. Global Codex modules need no flag and are selected by the
+// scoped options resolver.
 func routingGuidancePathsWithClaudeModules(homeDir, workspaceDir string, scope InstallScope, adapters []agents.Adapter, claudeModules bool) []string {
 	paths := []string{}
 	for _, adapter := range adapters {
@@ -4404,13 +4440,6 @@ func componentPathsWithWorkspaceScoped(homeDir, workspaceDir string, scope Insta
 						filepath.Join(codexHomeDir, "engram-instructions.md"),
 						filepath.Join(codexHomeDir, "engram-compact-prompt.md"),
 					)
-					// The Engram writer still targets ~/.codex when CODEX_HOME moves config.toml.
-					if writerDir := filepath.Join(targetDir, ".codex"); writerDir != codexHomeDir {
-						paths = append(paths,
-							filepath.Join(writerDir, "engram-instructions.md"),
-							filepath.Join(writerDir, "engram-compact-prompt.md"),
-						)
-					}
 					paths = append(paths, codexagent.SddProfilePaths(codexHomeDir)...)
 				}
 			}
@@ -4476,12 +4505,9 @@ func componentPathsWithWorkspaceScoped(homeDir, workspaceDir string, scope Insta
 						// Context7 injection writes ~/.claude.json (issue #1868).
 						paths = append(paths, claude.UserConfigPath(homeDir))
 					} else {
-						// Workspace scope writes <project-root>/.mcp.json, the file
-						// Claude Code loads project-scoped MCP servers from (issue #2213).
-						// The legacy .claude/settings.json block is a best-effort
-						// cleanup, not a guaranteed write, so it is not declared as a
-						// verification target (declaring it would force a false-negative
-						// when the file never existed).
+						// Workspace scope writes <workspace>/.mcp.json, the
+						// project-scoped file Claude Code loads MCP servers
+						// from (issue #2213).
 						paths = append(paths, filepath.Join(targetDir, ".mcp.json"))
 					}
 					break
@@ -4611,13 +4637,11 @@ func routingGuidanceOptions(homeDir, workspaceDir string, adapter agents.Adapter
 	return options
 }
 
-// scopedRoutingGuidanceOptions extends routingGuidanceOptions with the one
-// scope-dependent choice: a global Claude install continues the module pilot
-// whose ledger is already installed under homeDir (#5256), and creates it only
-// when claudeModules carries install's explicit opt-in. Otherwise, in the
-// workspace scope and for every other agent the options are unchanged. The
-// ledger is always looked up, so a ledger that cannot be inspected is an error
-// with or without the opt-in.
+// scopedRoutingGuidanceOptions extends routingGuidanceOptions with global-only
+// module delivery. Codex uses modules by default in global install and sync,
+// while workspace Codex stays monolithic. Claude continues its explicit pilot
+// opt-in and any installed pilot. The Claude ledger is always looked up, so a
+// ledger that cannot be inspected is an error with or without the opt-in.
 //
 // The routing step and the install/sync snapshot planner both resolve through
 // here, so the snapshot covers the core, every module and the ledger. After a
@@ -4627,7 +4651,14 @@ func routingGuidanceOptions(homeDir, workspaceDir string, adapter agents.Adapter
 // safe or atomic.
 func scopedRoutingGuidanceOptions(homeDir, workspaceDir string, scope InstallScope, adapter agents.Adapter, claudeModules bool) (agentguidance.RoutingOptions, error) {
 	options := routingGuidanceOptions(homeDir, workspaceDir, adapter)
-	if scope != ScopeGlobal || adapter.Agent() != model.AgentClaudeCode {
+	if scope != ScopeGlobal {
+		return options, nil
+	}
+	if adapter.Agent() == model.AgentCodex {
+		options.CodexGlobalModules = true
+		return options, nil
+	}
+	if adapter.Agent() != model.AgentClaudeCode {
 		return options, nil
 	}
 	pilot, err := agentguidance.ClaudeGlobalModulePaths(homeDir)

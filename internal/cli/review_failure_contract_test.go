@@ -404,16 +404,16 @@ func TestNegotiatedFacadeAggregateTimeoutPreservesMutationTruth(t *testing.T) {
 		args           []string
 		phase          string
 		mutation       ReviewMutationOutcome
+		retrySafe      bool
 		replayability  reviewtransaction.Replayability
 		nextAction     string
 		lineage        string
 		waitsForWorker bool
-		retrySafe      bool
 	}{
 		{
 			name: "read only", args: []string{"status", "--contract", ReviewIntegrationContractV1},
-			phase: "pre_native", mutation: ReviewMutationNotStarted,
-			replayability: reviewtransaction.ReplayabilityNotReplayable, nextAction: "retry", retrySafe: true,
+			phase: "pre_native", mutation: ReviewMutationNotStarted, retrySafe: true,
+			replayability: reviewtransaction.ReplayabilityNotReplayable, nextAction: "retry",
 		},
 		{
 			name: "read only validate", args: []string{"validate", "--contract", ReviewIntegrationContractV1},
