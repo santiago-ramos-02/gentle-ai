@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/gentleman-programming/gentle-ai/v4/internal/pipeline"
+	"github.com/gentleman-programming/gentle-ai/v5/internal/pipeline"
 )
 
 // emitter serializes NDJSON lines. Progress callbacks can arrive from worker

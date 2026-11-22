@@ -6,9 +6,9 @@ import (
 	"os/exec"
 	"slices"
 
-	"github.com/gentleman-programming/gentle-ai/v4/internal/components/communitytool"
-	"github.com/gentleman-programming/gentle-ai/v4/internal/model"
-	"github.com/gentleman-programming/gentle-ai/v4/internal/service"
+	"github.com/gentleman-programming/gentle-ai/v5/internal/components/communitytool"
+	"github.com/gentleman-programming/gentle-ai/v5/internal/model"
+	"github.com/gentleman-programming/gentle-ai/v5/internal/service"
 )
 
 // toolAgentStatusPending is a tool set up for an agent that cannot confirm it is active.

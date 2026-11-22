@@ -9,7 +9,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/gentleman-programming/gentle-ai/v4/internal/reviewerprovider"
+	"github.com/gentleman-programming/gentle-ai/v5/internal/reviewerprovider"
 )
 
 // reviewerActivityFileEnv names the file a host app sets so it can show reviewer runs

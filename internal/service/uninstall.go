@@ -7,9 +7,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/gentleman-programming/gentle-ai/v4/internal/catalog"
-	componentuninstall "github.com/gentleman-programming/gentle-ai/v4/internal/components/uninstall"
-	"github.com/gentleman-programming/gentle-ai/v4/internal/model"
+	"github.com/gentleman-programming/gentle-ai/v5/internal/catalog"
+	componentuninstall "github.com/gentleman-programming/gentle-ai/v5/internal/components/uninstall"
+	"github.com/gentleman-programming/gentle-ai/v5/internal/model"
 )
 
 // UninstallTargets returns what an uninstall mode removes. The full modes

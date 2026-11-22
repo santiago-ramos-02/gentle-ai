@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/gentleman-programming/gentle-ai/v4/internal/claudeprofile"
+	"github.com/gentleman-programming/gentle-ai/v5/internal/claudeprofile"
 )
 
 // With a host, applying a profile leaves Claude Code's settings alone and hands the

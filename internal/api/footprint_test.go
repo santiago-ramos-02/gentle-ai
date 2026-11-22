@@ -4,9 +4,9 @@ import (
 	"slices"
 	"testing"
 
-	componentuninstall "github.com/gentleman-programming/gentle-ai/v4/internal/components/uninstall"
-	"github.com/gentleman-programming/gentle-ai/v4/internal/model"
-	"github.com/gentleman-programming/gentle-ai/v4/internal/state"
+	componentuninstall "github.com/gentleman-programming/gentle-ai/v5/internal/components/uninstall"
+	"github.com/gentleman-programming/gentle-ai/v5/internal/model"
+	"github.com/gentleman-programming/gentle-ai/v5/internal/state"
 )
 
 func TestFootprintCoversOnlyAgentsGentleAiSetUp(t *testing.T) {

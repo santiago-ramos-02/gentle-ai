@@ -4,10 +4,10 @@ import (
 	"context"
 	"slices"
 
-	"github.com/gentleman-programming/gentle-ai/v4/internal/components/opencodeplugin"
-	"github.com/gentleman-programming/gentle-ai/v4/internal/components/piplugin"
-	"github.com/gentleman-programming/gentle-ai/v4/internal/model"
-	"github.com/gentleman-programming/gentle-ai/v4/internal/service"
+	"github.com/gentleman-programming/gentle-ai/v5/internal/components/opencodeplugin"
+	"github.com/gentleman-programming/gentle-ai/v5/internal/components/piplugin"
+	"github.com/gentleman-programming/gentle-ai/v5/internal/model"
+	"github.com/gentleman-programming/gentle-ai/v5/internal/service"
 )
 
 type pluginInfo struct {
