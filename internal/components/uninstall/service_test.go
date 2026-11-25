@@ -2139,6 +2139,7 @@ func TestFullAgentClaudeRemovesSkillRegistryHook(t *testing.T) {
         "matcher": "",
         "hooks": [
           {"type": "command", "command": "gentle-ai skill-registry refresh --quiet --no-gitignore --cwd \"${CLAUDE_PROJECT_DIR:-$PWD}\" || true"},
+          {"type": "command", "command": "powershell -NoProfile -Command 'if (Test-Path env:CLAUDE_PROJECT_DIR) { $dir = $env:CLAUDE_PROJECT_DIR } else { $dir = $PWD }; gentle-ai skill-registry refresh --quiet --no-gitignore --cwd \"$dir\"; exit 0'"},
           {"type": "command", "command": "echo keep"}
         ]
       }

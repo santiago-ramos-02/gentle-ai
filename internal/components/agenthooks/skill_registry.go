@@ -20,6 +20,16 @@ type Result struct {
 
 const claudeLegacySkillRegistryCommand = `gentle-ai skill-registry refresh --quiet --no-gitignore --cwd "${CLAUDE_PROJECT_DIR:-$PWD}" || true`
 
+const codexSkillRegistryCommand = `gentle-ai skill-registry refresh --quiet --no-gitignore --cwd "$PWD" || true`
+
+// IsSkillRegistryCommand reports whether cmd is a skill-registry hook command this package
+// installs on any platform, so removal recognizes every one of them.
+func IsSkillRegistryCommand(cmd string) bool {
+	return cmd == claudeLegacySkillRegistryCommand ||
+		cmd == claudeSkillRegistryCommand("windows") ||
+		cmd == codexSkillRegistryCommand
+}
+
 func claudeSkillRegistryCommand(platform string) string {
 	if platform == "windows" {
 		return `powershell -NoProfile -Command 'if (Test-Path env:CLAUDE_PROJECT_DIR) { $dir = $env:CLAUDE_PROJECT_DIR } else { $dir = $PWD }; gentle-ai skill-registry refresh --quiet --no-gitignore --cwd "$dir"; exit 0'`
@@ -83,7 +93,7 @@ func installSkillRegistry(homeDir string, adapter agents.Adapter, platform strin
 		}
 		path = filepath.Join(adapter.GlobalConfigDir(homeDir), "hooks.json")
 		event = "SessionStart"
-		command = `gentle-ai skill-registry refresh --quiet --no-gitignore --cwd "$PWD" || true`
+		command = codexSkillRegistryCommand
 	case model.AgentClaudeCode:
 		path = adapter.SettingsPath(homeDir)
 		event = "UserPromptSubmit"

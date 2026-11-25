@@ -19,6 +19,7 @@ import (
 	"github.com/gentleman-programming/gentle-ai/v5/internal/assets"
 	"github.com/gentleman-programming/gentle-ai/v5/internal/backup"
 	"github.com/gentleman-programming/gentle-ai/v5/internal/components/agentguidance"
+	"github.com/gentleman-programming/gentle-ai/v5/internal/components/agenthooks"
 	"github.com/gentleman-programming/gentle-ai/v5/internal/components/antigravityrules"
 	"github.com/gentleman-programming/gentle-ai/v5/internal/components/communitytool"
 	"github.com/gentleman-programming/gentle-ai/v5/internal/components/engram"
@@ -1730,8 +1731,7 @@ func rewriteSkillRegistryHook(path string) operation {
 
 // Only exact installed commands are removed; arbitrary user commands remain intact.
 func managedRetainedHookCommand(cmd string) bool {
-	return cmd == `gentle-ai skill-registry refresh --quiet --no-gitignore --cwd "${CLAUDE_PROJECT_DIR:-$PWD}" || true` ||
-		cmd == `gentle-ai skill-registry refresh --quiet --no-gitignore --cwd "$PWD" || true` ||
+	return agenthooks.IsSkillRegistryCommand(cmd) ||
 		cmd == "gentle-ai review stop-hook --agent "+string(model.AgentClaudeCode) ||
 		cmd == "gentle-ai telemetry runtime claude --json" ||
 		cmd == "gentle-ai telemetry runtime codex --json"
