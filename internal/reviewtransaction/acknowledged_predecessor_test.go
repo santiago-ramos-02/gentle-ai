@@ -242,32 +242,38 @@ func TestAcknowledgedPassivePredecessorOffersReviewForUnreviewedCodeBeforeChaine
 	requirePassivePredecessor(t, repo, buildCommittedRange(t, repo, baseCommit), false)
 }
 
-func TestAcknowledgedBoundaryReachesHeadWhenChainedReviewsCoverTheRange(t *testing.T) {
+func TestAcknowledgedBoundarySelectsTheExactRangeWhenChainedReviewsCoverTheBranch(t *testing.T) {
 	repo, baseCommit := chainedReviewedWork(t, "helper.go", "package feature\n\nfunc helper() {}\n")
 	// Review base..first too: base..first, first..feature and feature..HEAD
 	// cover the whole branch without one range spanning it.
 	gitSnapshot(t, repo, "checkout", "-q", "HEAD~2")
 	acknowledgeCommittedRange(t, repo, baseCommit, "review-3333333333333333")
 	gitSnapshot(t, repo, "checkout", "-q", "-")
-	boundary, ok, err := AcknowledgedBoundaryCommit(context.Background(), repo, buildCommittedRange(t, repo, baseCommit))
+	live := buildCommittedRange(t, repo, baseCommit)
+	boundary, ok, err := AcknowledgedBoundaryCommit(context.Background(), repo, live)
 	if err != nil || !ok {
 		t.Fatalf("AcknowledgedBoundaryCommit ok = %v, err = %v", ok, err)
 	}
-	if len(boundary.DeltaPaths) != 0 || !boundary.Passive {
-		t.Fatalf("boundary = %+v, want it to reach HEAD with no delta", boundary)
+	// The newest exact acknowledgement is selected, never an unreviewed delta.
+	if boundary.Commit != strings.TrimSpace(gitSnapshot(t, repo, "rev-parse", "HEAD~1")) || boundary.Passive {
+		t.Fatalf("boundary = %+v, want the exact acknowledged feature..HEAD range", boundary)
 	}
+	requirePassivePredecessor(t, repo, live, true)
 }
 
-func TestAcknowledgedBoundaryReachesHeadWhenReviewedWorkFollowsAReviewedBase(t *testing.T) {
+func TestAcknowledgedBoundarySelectsTheExactRangeWhenReviewedWorkFollowsAReviewedBase(t *testing.T) {
 	repo, baseCommit := acknowledgedPredecessorFixture(t)
 	featureCommit := headCommit(t, repo)
 	commitSnapshotFile(t, repo, "feature.go", "package feature\n\nfunc Run() { _ = 1 }\n")
 	acknowledgeCommittedRange(t, repo, featureCommit, "review-4444444444444444")
-	boundary, ok, err := AcknowledgedBoundaryCommit(context.Background(), repo, buildCommittedRange(t, repo, baseCommit))
+	live := buildCommittedRange(t, repo, baseCommit)
+	boundary, ok, err := AcknowledgedBoundaryCommit(context.Background(), repo, live)
 	if err != nil || !ok {
 		t.Fatalf("AcknowledgedBoundaryCommit ok = %v, err = %v", ok, err)
 	}
-	if len(boundary.DeltaPaths) != 0 || !boundary.Passive {
-		t.Fatalf("boundary = %+v, want it to reach HEAD with no delta", boundary)
+	// The newest exact acknowledgement is selected, never an unreviewed delta.
+	if boundary.Commit != featureCommit || boundary.Passive {
+		t.Fatalf("boundary = %+v, want the exact acknowledged feature..HEAD range", boundary)
 	}
+	requirePassivePredecessor(t, repo, live, true)
 }
