@@ -157,6 +157,8 @@ func TestClaudeODDOnlyOrchestrator(t *testing.T) {
 		"{{GENTLE_AI_ODD_SECTION:Delegated Verification Gate (MANDATORY)}}",
 		"Lossless Blocking Prompts", "Gentle AI Provider Defect Handoff",
 		"Native Checking Contract", "Review Execution Contract", "#### Delegation Triggers", // S9 C4 renamed the heading
+		"run as installed named agents", "`subagent_type`", "carries the model and effort",
+		"installed routing table",
 	} {
 		if !strings.Contains(content, required) {
 			t.Errorf("Claude orchestrator missing %q", required)
@@ -166,6 +168,7 @@ func TestClaudeODDOnlyOrchestrator(t *testing.T) {
 		"{{GENTLE_AI_SDD_SECTION:", "SDD Workflow", "SDD Edit-Authority", "sdd-apply",
 		"sdd-verify", "sdd-orchestrator-workflow.md", "optional SDD", "Optional SDD rule",
 		"sdd-model-assignments", "SDD phase", "OpenSpec", "{{GENTLE_AI_RESEARCH_LIFECYCLE}}",
+		"2.1.292", // The routing table owns the effort compatibility rule.
 	} {
 		if strings.Contains(content, forbidden) {
 			t.Errorf("Claude orchestrator retains %q", forbidden)

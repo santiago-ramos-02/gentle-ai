@@ -74,8 +74,8 @@ type RoutingOptions struct {
 	CodexPhaseModelAssignments  map[string]string
 	CodexModelAssignments       map[string]model.CodexEffort
 	CodexCarrilModelAssignments map[string]string
-	ClaudePhaseAssignments      map[string]model.ClaudePhaseAssignment
 	ClaudeModelAssignments      map[string]model.ClaudeModelAlias
+	ClaudePhaseAssignments      map[string]model.ClaudePhaseAssignment
 	// ClaudeSlotGuide says what each Claude Code model slot runs under the applied profile.
 	ClaudeSlotGuide string
 	// ClaudeGlobalModules opts the user-global Claude install into a core
