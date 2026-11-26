@@ -116,8 +116,26 @@ func acknowledgedBoundaryCommit(ctx context.Context, repo string, live Snapshot,
 	if err != nil {
 		return AcknowledgedBoundary{}, false, err
 	}
+	if len(ancestors) == 0 {
+		return AcknowledgedBoundary{}, false, nil
+	}
 	// Terminal facts were read once above, so a range lookup costs one batched
-	// path diff and no store access.
+	// path diff and no store access. Resolve the Git identity once for the walk
+	// and revalidate it before using a matched boundary; a changed repository
+	// must not suppress review.
+	lease, err := openRepositoryIdentityLeaseAtRoot(ctx, root)
+	if err != nil {
+		return AcknowledgedBoundary{}, false, err
+	}
+	confirm := func(boundary AcknowledgedBoundary, ok bool, err error) (AcknowledgedBoundary, bool, error) {
+		if err != nil || !ok {
+			return AcknowledgedBoundary{}, false, err
+		}
+		if err := lease.Validate(ctx); err != nil {
+			return AcknowledgedBoundary{}, false, err
+		}
+		return boundary, true, nil
+	}
 	consumedRange := func(baseTree, candidateTree string) ([]string, bool, error) {
 		paths, err := builder.changedPaths(ctx, baseTree, candidateTree)
 		if err != nil {
@@ -148,7 +166,7 @@ func acknowledgedBoundaryCommit(ctx context.Context, repo string, live Snapshot,
 				return AcknowledgedBoundary{}, false, err
 			}
 			if covered {
-				return AcknowledgedBoundary{Commit: ancestor.commit, Tree: ancestor.tree, DeltaPaths: paths}, true, nil
+				return confirm(AcknowledgedBoundary{Commit: ancestor.commit, Tree: ancestor.tree, DeltaPaths: paths}, true, nil)
 			}
 		}
 		if next < 0 {
@@ -175,7 +193,7 @@ func acknowledgedBoundaryCommit(ctx context.Context, repo string, live Snapshot,
 	if ancestor.tree == live.BaseTree {
 		// No acknowledgement starts at the base, but reviewed work may sit on
 		// top of a passive prefix of the branch.
-		return builder.acknowledgedWorkAbovePassiveBase(ctx, consumed, live, ancestors[:start], reachesHead)
+		return confirm(builder.acknowledgedWorkAbovePassiveBase(ctx, consumed, live, ancestors[:start], reachesHead))
 	}
 	deltaPaths, err := builder.changedPaths(ctx, ancestor.tree, live.CandidateTree)
 	if err != nil {
@@ -184,7 +202,7 @@ func acknowledgedBoundaryCommit(ctx context.Context, repo string, live Snapshot,
 	if len(deltaPaths) == 0 {
 		// Every commit since the boundary was empty: the boundary reaches
 		// the live content, so there is no delta to classify.
-		return AcknowledgedBoundary{Commit: ancestor.commit, Tree: ancestor.tree, Passive: true}, true, nil
+		return confirm(AcknowledgedBoundary{Commit: ancestor.commit, Tree: ancestor.tree, Passive: true}, true, nil)
 	}
 	// guard:population acknowledged-passive-delta too-loose: only a committed HEAD base-diff whose first-parent boundary is reached by contiguous, exact consumed identities from the same base tree is reported; the shared risk assessor classifies the remaining delta, and lookup failures keep the offer
 	// A delta that was itself reviewed as a range, such as the workspace
@@ -196,10 +214,10 @@ func acknowledgedBoundaryCommit(ctx context.Context, repo string, live Snapshot,
 			return AcknowledgedBoundary{}, false, err
 		}
 	}
-	return AcknowledgedBoundary{
+	return confirm(AcknowledgedBoundary{
 		Commit: ancestor.commit, Tree: ancestor.tree,
 		DeltaPaths: deltaPaths, Passive: passive,
-	}, true, nil
+	}, true, nil)
 }
 
 // acknowledgedWorkAbovePassiveBase handles a branch with no acknowledgement
