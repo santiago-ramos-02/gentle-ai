@@ -131,6 +131,13 @@ const (
 var releasedPromptEdits = map[string][][2]string{
 	"gentle-ai-explore": {
 		{"file contents. Never claim evidence", "file contents. Any requested `## Key Learnings` block follows it. Never claim evidence"},
+		{
+			"- Map the code with `read`, `grep`, and `glob`. Only when the `codegraph_explore` MCP tool is offered to you, you may use it first for structural questions; never target another workspace's `.codegraph/` index.\n" +
+				"- CodeGraph indexing (`gentle-ai codegraph init`) is a parent-owned lifecycle action; this agent never creates an index.\n",
+			"- For structural questions, prefer the `codegraph_explore` MCP tool before broad filesystem searches; it returns relevant source, call paths, and blast-radius context in one call. Never target another workspace's `.codegraph/` index.\n" +
+				"- CodeGraph indexing (`gentle-ai codegraph init`) is a parent-owned lifecycle action; this agent only queries an existing index and does not create one.\n" +
+				"- If CodeGraph reports that it is unavailable or fails, then use `read`, `grep`, and `glob` as the fallback. Do not use that fallback before CodeGraph is unavailable or fails.\n",
+		},
 	},
 	"gentle-ai-worker": {
 		{"list. Never widen it yourself: a route beyond it is reported to the parent with the exact candidate paths and reasons, and only a parent-issued replacement of that section authorizes it, carrying every still-needed path because the replacement is not a union. That declaration never substitutes for repository or worktree authority and never authorizes an operation the existing rules prohibit.", "list."},
